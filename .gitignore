@@ -1,0 +1,26 @@
+# Environment
+.venv/
+uv.lock
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Data: re-downloadable from Kaggle via `python -m src.data` (see README)
+data/
+
+# Training artifacts: checkpoints, figures, rendered videos
+runs/
+
+# Model weights and media are too large for git
+*.pt
+*.pth
+*.onnx
+*.mp4
+*.avi
+*.mov
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store

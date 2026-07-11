@@ -1,0 +1,44 @@
+[project]
+name = "ml4ce-vehicle-counting"
+version = "0.1.0"
+description = "ML4CE semester project, Topic 2: vehicle detection in images and vehicle counting in videos"
+requires-python = ">=3.12,<3.13"
+
+dependencies = [
+    "torch>=2.6",
+    "torchvision>=0.21",
+    "ultralytics>=8.3",
+    "opencv-python>=4.10",
+    "pandas>=2.2",
+    "numpy>=1.26",
+    "matplotlib>=3.9",
+    "scikit-learn>=1.5",
+    "scipy>=1.14",
+    "kagglehub>=0.3",
+    "tqdm>=4.66",
+    "pyyaml>=6.0",
+    "jupyter>=1.1",
+    "pytest>=8.3",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Put the project root on sys.path so tests can `import config` / `from src...` without
+# the project needing to be pip-installed.
+pythonpath = ["."]
+
+# The project lives in a OneDrive folder, whose cloud filesystem does not support the
+# hardlinks uv uses by default to populate a venv from its cache (os error 396).
+# Copying is slightly slower to install but is the only mode that works here.
+[tool.uv]
+link-mode = "copy"
+
+# torch/torchvision come from the CUDA 12.6 index; the default PyPI wheels are CPU-only.
+[tool.uv.sources]
+torch = { index = "pytorch-cu126" }
+torchvision = { index = "pytorch-cu126" }
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
