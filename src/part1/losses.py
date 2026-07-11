@@ -26,6 +26,27 @@ import torch.nn.functional as F
 import config
 
 
+def activate_box(raw: torch.Tensor, assign: str = config.ASSIGN) -> torch.Tensor:
+    """Raw head logits (B, 4, G, G) -> box parameters in the same space the targets live in.
+
+    The offset activation MUST match the assignment scheme, and this is the one place it is
+    defined so the loss, the decoder and inference cannot drift apart:
+
+      "center": offsets = sigmoid(t)          -> [0, 1]     (center stays inside its own cell)
+      "multi":  offsets = sigmoid(t)*2 - 0.5  -> [-0.5, 1.5] (a neighbour cell must be able to
+                                                              place the center outside itself)
+
+    Sizes are always sigmoid -> a fraction of the image in (0, 1].
+
+    Get this wrong and nothing crashes: the model simply cannot represent the target, and the
+    box loss plateaus at a suspiciously non-zero value.
+    """
+    lo, hi = config.OFFSET_RANGE[assign]
+    offsets = torch.sigmoid(raw[:, :2]) * (hi - lo) + lo
+    sizes = torch.sigmoid(raw[:, 2:])
+    return torch.cat([offsets, sizes], dim=1)
+
+
 def decode_boxes(box_params: torch.Tensor, img_size: int = config.IMG_SIZE) -> torch.Tensor:
     """(B, 4, G, G) of sigmoid-space (off_x, off_y, w, h) -> (B, 4, G, G) of (x1, y1, x2, y2) px.
 
@@ -107,12 +128,14 @@ class DetectionLoss(nn.Module):
         lambda_obj: float = config.LAMBDA_OBJ,
         lambda_box: float = config.LAMBDA_BOX,
         pos_weight: float = config.POS_WEIGHT,
+        assign: str = config.ASSIGN,
     ):
         super().__init__()
         self.box_loss = box_loss
         self.imbalance = imbalance
         self.lambda_obj = lambda_obj
         self.lambda_box = lambda_box
+        self.assign = assign
         self.register_buffer("pos_weight", torch.tensor([pos_weight]))
 
     def forward(
@@ -128,7 +151,7 @@ class DetectionLoss(nn.Module):
         "no object", which the total alone would hide.
         """
         obj_logits = pred[:, 0]
-        box_params = torch.sigmoid(pred[:, 1:])  # into [0, 1], matching the target encoding
+        box_params = activate_box(pred[:, 1:], self.assign)  # same space as the targets
 
         # ---- objectness, over every cell ----------------------------------------------
         if self.imbalance == "focal":

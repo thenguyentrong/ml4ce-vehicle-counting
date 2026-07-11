@@ -33,12 +33,45 @@ IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 
+def assigned_cells(gx: float, gy: float, grid: int, assign: str) -> list[tuple[int, int]]:
+    """Which cells are responsible for a box whose center is at grid coordinate (gx, gy)?
+
+    "center": just the cell the center falls in - literally what the task sheet prescribes.
+
+    "multi":  that cell plus its two nearest neighbours (the ones the center leans towards).
+              A center at gx=4.2 leans left, so cell 3 also predicts it; at gx=4.8 it leans
+              right, so cell 5 does. Those neighbouring cells must then express a center that
+              lies *outside themselves* (offset 1.2 and -0.2 respectively), which is exactly
+              why the offset range widens to [-0.5, 1.5] for this mode.
+
+              This triples the positive supervision - the binding constraint here, with only
+              453 training boxes - and turns the neighbours from fragment-emitters into
+              agreeing votes that NMS merges.
+    """
+    i, j = min(int(gx), grid - 1), min(int(gy), grid - 1)
+    cells = [(i, j)]
+
+    if assign == "multi":
+        fx, fy = gx - i, gy - j  # where inside the cell the center sits, in [0, 1)
+        if fx < 0.5 and i > 0:
+            cells.append((i - 1, j))
+        elif fx >= 0.5 and i < grid - 1:
+            cells.append((i + 1, j))
+        if fy < 0.5 and j > 0:
+            cells.append((i, j - 1))
+        elif fy >= 0.5 and j < grid - 1:
+            cells.append((i, j + 1))
+
+    return cells
+
+
 def encode_target(
     boxes: np.ndarray,
     img_w: int,
     img_h: int,
     grid: int = config.GRID,
     img_size: int = config.IMG_SIZE,
+    assign: str = config.ASSIGN,
 ) -> tuple[torch.Tensor, torch.Tensor, int]:
     """Turn pixel boxes from the *original* image into a grid target.
 
@@ -73,19 +106,25 @@ def encode_target(
         cx, cy = (xmin + xmax) / 2.0, (ymin + ymax) / 2.0
         w, h = xmax - xmin, ymax - ymin
 
-        # Which cell owns this box? A center exactly on the right/bottom edge would index
-        # out of the grid, hence the clamp.
-        i = min(int(cx / cell), grid - 1)  # column
-        j = min(int(cy / cell), grid - 1)  # row
+        gx, gy = cx / cell, cy / cell  # center in grid coordinates
 
-        if obj[j, i] == 1.0:
-            collisions += 1  # this cell is already taken - the box is dropped, by design
+        # A center exactly on the right/bottom edge would index out of the grid -> clamp
+        # happens inside assigned_cells().
+        owners = assigned_cells(gx, gy, grid, assign)
+        counted_collision = False
 
-        obj[j, i] = 1.0
-        box[0, j, i] = cx / cell - i  # offset within the cell, in [0, 1)
-        box[1, j, i] = cy / cell - j
-        box[2, j, i] = w / img_size  # size as a fraction of the image, in (0, 1]
-        box[3, j, i] = h / img_size
+        for i, j in owners:
+            # Cell already claimed by an earlier box: one cell can only carry one box, so
+            # this one is dropped. Count it once per box, not once per assigned cell.
+            if obj[j, i] == 1.0 and not counted_collision:
+                collisions += 1
+                counted_collision = True
+
+            obj[j, i] = 1.0
+            box[0, j, i] = gx - i  # center offset relative to THIS cell
+            box[1, j, i] = gy - j  # in [0,1) for the owning cell, [-0.5,1.5] for a neighbour
+            box[2, j, i] = w / img_size  # size as a fraction of the image, in (0, 1]
+            box[3, j, i] = h / img_size
 
     return obj, box, collisions
 
@@ -121,11 +160,19 @@ class VehicleGridDataset(Dataset):
     dropped, flattering our own recall.
     """
 
-    def __init__(self, images: list[str], df, images_dir, augment: bool = False):
+    def __init__(
+        self,
+        images: list[str],
+        df,
+        images_dir,
+        augment: bool = False,
+        assign: str = config.ASSIGN,
+    ):
         self.images = images
         self.df = df
         self.images_dir = images_dir
         self.augment = augment
+        self.assign = assign
         self.img_size = config.IMG_SIZE
 
     def __len__(self) -> int:
@@ -148,7 +195,7 @@ class VehicleGridDataset(Dataset):
         arr = (arr - IMAGENET_MEAN) / IMAGENET_STD
         img = torch.from_numpy(arr).permute(2, 0, 1).contiguous()  # HWC -> CHW
 
-        obj, box, _ = encode_target(boxes, img_w, img_h)
+        obj, box, _ = encode_target(boxes, img_w, img_h, assign=self.assign)
 
         # Ground-truth boxes in network pixels, for evaluation.
         scale = np.array([self.img_size / img_w, self.img_size / img_h] * 2, dtype=np.float32)
@@ -188,7 +235,9 @@ def collate(batch):
 
 
 def build_loaders(
-    augment: bool = True, split_mode: str = config.SPLIT_MODE
+    augment: bool = True,
+    split_mode: str = config.SPLIT_MODE,
+    assign: str = config.ASSIGN,
 ) -> dict[str, DataLoader]:
     """DataLoaders for train/val/test, all sharing the split from `src.data`."""
     paths = data_mod.resolve_dataset_paths()
@@ -198,7 +247,7 @@ def build_loaders(
     loaders = {}
     for split, names in splits.items():
         ds = VehicleGridDataset(
-            names, df, paths.images_dir, augment=(augment and split == "train")
+            names, df, paths.images_dir, augment=(augment and split == "train"), assign=assign
         )
         loaders[split] = DataLoader(
             ds,

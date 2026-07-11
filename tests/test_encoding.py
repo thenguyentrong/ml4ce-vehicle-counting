@@ -98,6 +98,59 @@ def test_decode_boxes_matches_decode_target():
     assert torch.allclose(iou, torch.ones_like(iou), atol=1e-4)
 
 
+def test_multi_assign_marks_three_cells_per_box():
+    """'multi' must light up the center cell plus the two neighbours the center leans toward."""
+    # Center at (336, 176) -> grid (10.5, 5.5): leans right and down -> cells (10,5),(11,5),(10,6).
+    boxes = np.array([[320.0, 160.0, 352.0, 192.0]], dtype=np.float32)
+    obj, _, _ = encode_target(boxes, 512, 512, assign="multi")
+
+    cells = {(int(i), int(j)) for j, i in torch.nonzero(obj).tolist()}
+    assert cells == {(10, 5), (11, 5), (10, 6)}, cells
+
+
+def test_multi_assign_roundtrips_through_its_own_activation():
+    """The whole point of 'multi': every assigned cell must decode back to the SAME box.
+
+    A neighbouring cell has to express a center lying outside itself (offset > 1 or < 0),
+    which only works if the offset activation is widened to [-0.5, 1.5]. If encoder and
+    activation disagree, this test fails - and nothing else would have caught it.
+    """
+    boxes = np.array([[100.0, 150.0, 200.0, 192.0]], dtype=np.float32)
+    obj, box, _ = encode_target(boxes, 676, 380, assign="multi")
+
+    assert obj.sum() == 3, "expected the center cell plus two neighbours"
+
+    # Offsets must fall inside the widened range the 'multi' activation can actually produce.
+    lo, hi = config.OFFSET_RANGE["multi"]
+    offs = box[:2][box[:2] != 0]
+    assert (offs >= lo).all() and (offs <= hi).all(), f"offsets outside [{lo},{hi}]: {offs}"
+
+    # All three cells must decode to the same box as the original.
+    recovered = decode_target(obj, box)
+    scale = np.array([config.IMG_SIZE / 676, config.IMG_SIZE / 380] * 2, dtype=np.float32)
+    expected = torch.from_numpy(boxes * scale)
+
+    iou = box_iou(recovered, expected).squeeze(1)
+    assert torch.allclose(iou, torch.ones_like(iou), atol=1e-4), f"per-cell IoU: {iou}"
+
+
+def test_activation_can_reach_the_multi_targets():
+    """Sanity: the widened activation's range must cover what the encoder actually emits.
+
+    A plain sigmoid ([0,1]) cannot produce the offset 1.2 a left-neighbour cell needs, so a
+    'multi' model trained with the 'center' activation would silently never fit its targets.
+    """
+    from src.part1.losses import activate_box
+
+    raw = torch.linspace(-8, 8, 64).view(1, 1, 8, 8).repeat(1, 4, 1, 1)
+
+    center = activate_box(raw, "center")[:, :2]
+    assert float(center.min()) >= 0.0 and float(center.max()) <= 1.0
+
+    multi = activate_box(raw, "multi")[:, :2]
+    assert float(multi.min()) < 0.0 and float(multi.max()) > 1.0, "range was not widened"
+
+
 @pytest.mark.parametrize("n", [0, 1, 5])
 def test_empty_and_multi_box_images(n):
     """Zero boxes (64.5% of this dataset) must encode cleanly to an all-negative target."""

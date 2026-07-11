@@ -45,6 +45,23 @@ GRID = IMG_SIZE // STRIDE  # -> 16 x 16 grid, as prescribed by the task sheet
 BACKBONE = "resnet18"  # "resnet18" | "mobilenet_v3_large"  (ablation)
 FREEZE_BACKBONE = True  # train the head only  (ablation)
 
+# How ground-truth boxes are assigned to grid cells  (ablation):
+#   "center" - exactly the task sheet: ONLY the cell containing the box center is positive.
+#              With 453 training boxes that is 453 positive signals against 205k negative
+#              cells, and the neighbouring cells - which fire anyway - are never taught what
+#              box to predict, so they emit undersized fragments.
+#   "multi"  - the center cell PLUS its 2 nearest neighbours are positive, all regressing the
+#              same box (this is what YOLOv5 does). 3x the positive supervision, and the
+#              neighbours now agree with the center instead of fragmenting, so NMS merges
+#              them cleanly. Requires the wider offset range below.
+ASSIGN = "center"
+
+# Offset activation range. "center" assignment only ever needs offsets inside the cell -> a
+# plain sigmoid, [0, 1]. "multi" needs a neighbouring cell to place a center up to half a cell
+# outside itself -> sigmoid(t)*2 - 0.5, giving [-0.5, 1.5]. Getting this wrong is silent: the
+# model simply cannot reach the target and box loss plateaus.
+OFFSET_RANGE = {"center": (0.0, 1.0), "multi": (-0.5, 1.5)}
+
 # Split: 80% train / 15% val / 5% test, split BY IMAGE so no image leaks across splits.
 SPLIT_TRAIN, SPLIT_VAL, SPLIT_TEST = 0.80, 0.15, 0.05
 SEED = 42

@@ -64,13 +64,24 @@ data/                dataset + traffic video                (git-ignored)
 
 ## Results
 
-**Part 1 baseline** — frozen ResNet18, 16×16 grid, L1 box loss, 40 epochs (166 s on an RTX 3090).
-Score threshold 0.70 and NMS IoU 0.1, both tuned on validation:
+**Part 1.** Test-set precision/recall at IoU ≥ 0.5, temporal split. Score threshold and NMS IoU tuned
+on validation; 12 configurations compared in [`docs/experiments.md`](docs/experiments.md).
 
-| Split | Precision | Recall | F1 |
-|---|---|---|---|
-| Validation (150 images) | 0.679 | 0.559 | **0.613** |
-| Test (50 images) | 0.455 | 0.395 | 0.423 |
+| Configuration | Precision | Recall | F1 | AP50 |
+|---|---|---|---|---|
+| **Best** — MobileNetV3, multi-cell assign, fine-tuned backbone | **0.943** | **0.868** | **0.904** | **0.871** |
+| Task-sheet baseline — frozen ResNet18, one positive cell/box | 0.455 | 0.395 | 0.423 | 0.213 |
+
+Two changes account for almost all of it:
+
+- **Unfreezing the backbone** (+0.42 F1 alone). The frozen ImageNet features — object-centric photos —
+  simply do not fit small, motion-blurred vehicles seen from a dashcam, and no detection head can
+  compensate. *This deviates from the task sheet's "you don't need to train the backbone", so both
+  the frozen and fine-tuned results are reported.*
+- **Multi-cell assignment** (+0.23 F1 alone). The prescribed one-positive-cell-per-box rule gives only
+  453 positive signals across the whole training set, and leaves the neighbouring cells — which fire
+  anyway — untrained, so they emit fragments that cost a false positive *and* a false negative on the
+  same car. Training the center cell plus its two nearest neighbours on the same box fixes it.
 
 Two findings worth knowing before reading those numbers:
 

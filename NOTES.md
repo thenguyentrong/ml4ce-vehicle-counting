@@ -133,3 +133,61 @@ blocks would be acceptable — it would give an honest number *and* an error bar
 table in `docs/experiments.md` is already laid out for them.
 
 ---
+
+## 2026-07-12 — 12 ablations: test F1 0.423 → 0.904
+
+Full table in `docs/experiments.md`. The prescribed baseline (frozen ResNet18, one positive cell per
+box) reaches **test F1 0.423 / AP50 0.213**. The best configuration reaches **test F1 0.904 / AP50
+0.871** — AP50 improved 4×. Two changes did essentially all of it.
+
+**Lever 1 — the frozen backbone was the bottleneck, not the head.** Unfreezing `layer4` (lr 1e-4)
+alone takes test F1 from 0.423 to **0.838**. In hindsight this is obvious: ImageNet is object-centric
+photographs, our vehicles are small, motion-blurred and shot from a moving dashcam. No detection head
+can compensate for features that were never tuned for that. The clincher is the MobileNetV3 result —
+*frozen*, it scores 0.778 against ResNet18's 0.423, but once both are unfrozen the gap collapses to
+0.904 vs 0.880. The problem was never capacity; it was frozen-feature mismatch.
+
+⚠️ **This deviates from the task sheet**, which says "you don't need to train the backbone, only train
+your detection head". That is permission, not prohibition — but we therefore report **both**: the
+prescribed frozen detector *and* the fine-tuned one, with the gap as the finding. Worth confirming
+with the supervisor that the deviation is acceptable, since it is our strongest result.
+
+**Lever 2 — multi-cell assignment.** The task sheet's "one positive cell per box" gives 453 positive
+signals against ~205 000 negative cells. The neighbouring cells fire regardless, but were never
+taught *which* box to emit — so they produced undersized fragments that NMS could not merge, costing
+a false positive *and* a false negative on the same car. Assigning the center cell **plus its two
+nearest neighbours**, all regressing the same box (what YOLOv5 does), turns those fragments into
+agreeing votes. Frozen: 0.423 → **0.648**, with test false positives dropping 18 → 10.
+
+This required widening the offset activation from `sigmoid` ([0,1]) to `sigmoid*2 − 0.5`
+([−0.5, 1.5]), because a neighbouring cell must be able to place a box center *outside itself*. That
+is a silent failure mode — with a plain sigmoid the target is simply unreachable and the box loss
+plateaus at a suspiciously non-zero value with no error raised — so `tests/test_encoding.py` now
+asserts all three assigned cells decode back to the *same* box, and that the widened activation can
+actually reach the range the encoder emits.
+
+**What did NOT work (all real, all going in the presentation):**
+- **CIoU lost to plain L1**, which we did not expect since CIoU optimises the IoU we are scored on.
+  Our read: with objects this small (median 1.6% of image area) and predictions initially far from
+  the targets, CIoU's gradient is poorly conditioned; L1 in the bounded sigmoid space is just an
+  easier optimisation problem.
+- **Focal loss was the worst run of all** (0.421). It is built for the extreme imbalance of dense
+  anchor detectors; here `pos_weight=20` already handles a far milder one, and focal's suppression
+  of easy negatives starved the objectness head.
+- **Plain BCE collapsed recall to 0.395** — it learned to answer "no vehicle" and bank 99% cell
+  accuracy. Exactly the failure the imbalance handling exists to prevent.
+- **Our augmentation bought nothing.** hflip + colour jitter: val F1 **0.612** vs **0.613** without.
+  Identical. The clip is one dashcam pass down one road — mirroring and re-tinting it does not create
+  the variety the model lacks. What is missing is *scale and viewpoint* variation, so random
+  scale/translate crops are the thing to try, not more colour tricks. Reporting this as a negative
+  result rather than quietly dropping the row.
+
+**Bug caught by looking at the pictures, not the metrics.** The first render of the best model showed
+red "false positives" stacked on cars the metrics had scored as clean. The metrics were right and the
+*visualiser* was wrong: it decoded a `multi` model with the `center` offset activation and used the
+default NMS instead of the tuned one. Both are silent — the boxes come out subtly shifted and
+duplicated, with no error. Fixed by making `visualize.py` read `assign` and `nms_iou` from the
+checkpoint and metrics, exactly as `evaluate.py` does. A good reminder for the presentation: the
+figure and the table must be produced by the same code path, or one of them is lying.
+
+---

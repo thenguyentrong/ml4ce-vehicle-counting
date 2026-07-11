@@ -17,7 +17,7 @@ import torch
 from torchvision.ops import nms
 
 import config
-from src.part1.losses import decode_boxes
+from src.part1.losses import activate_box, decode_boxes
 
 
 @torch.no_grad()
@@ -26,14 +26,17 @@ def decode_predictions(
     score_thresh: float = config.SCORE_THRESH,
     nms_iou: float = config.NMS_IOU,
     img_size: int = config.IMG_SIZE,
+    assign: str = config.ASSIGN,
 ) -> list[dict[str, torch.Tensor]]:
     """(B, 5, G, G) raw logits -> one dict per image with `boxes` (N,4) and `scores` (N,).
 
     Boxes are in network-input pixels (0..img_size), the same frame as the ground truth
     returned by the dataset, so evaluation compares like with like.
+
+    `assign` must match what the model was TRAINED with - it selects the offset activation.
     """
     scores_grid = torch.sigmoid(pred[:, 0])  # (B, G, G)
-    boxes_grid = decode_boxes(torch.sigmoid(pred[:, 1:]), img_size)  # (B, 4, G, G)
+    boxes_grid = decode_boxes(activate_box(pred[:, 1:], assign), img_size)  # (B, 4, G, G)
 
     out = []
     for b in range(pred.shape[0]):

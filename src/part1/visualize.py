@@ -65,20 +65,28 @@ def main() -> None:
     model.load_state_dict(ckpt["model"])
     model.eval()
 
-    # Use the same threshold evaluate.py tuned on validation, so the picture matches the table.
+    # Use the SAME settings evaluate.py tuned on validation, so the picture matches the table.
+    # All three matter and all three fail silently if omitted:
+    #   - threshold / nms_iou: a lax NMS leaves duplicate boxes the metrics never counted, so
+    #     the figure shows "false positives" that do not exist in the numbers.
+    #   - assign: it selects the offset activation. Decoding a "multi" model with the "center"
+    #     activation shifts every box - no error, just quietly wrong pictures in the report.
     metrics_path = run_dir / "metrics.json"
-    thresh = (
-        json.loads(metrics_path.read_text())["threshold"]
-        if metrics_path.exists()
-        else config.SCORE_THRESH
-    )
+    metrics = json.loads(metrics_path.read_text()) if metrics_path.exists() else {}
+    thresh = metrics.get("threshold", config.SCORE_THRESH)
+    nms_iou = metrics.get("nms_iou", config.NMS_IOU)
+    assign = saved.get("assign", config.ASSIGN)
 
-    loaders = build_loaders(augment=False, split_mode=saved.get("split_mode", config.SPLIT_MODE))
+    loaders = build_loaders(
+        augment=False, split_mode=saved.get("split_mode", config.SPLIT_MODE), assign=assign
+    )
 
     rows = []
     with torch.no_grad():
         for imgs, _, _, gts in loaders["test"]:
-            preds = decode_predictions(model(imgs.to(dev)), score_thresh=thresh)
+            preds = decode_predictions(
+                model(imgs.to(dev)), score_thresh=thresh, nms_iou=nms_iou, assign=assign
+            )
             for img_t, pred, gt in zip(imgs, preds, gts):
                 if len(gt) == 0:
                     continue  # show frames that actually contain vehicles
@@ -125,7 +133,10 @@ def main() -> None:
 
     out = run_dir / "predictions.png"
     sheet.save(out)
-    print(f"wrote {out}  (score threshold {thresh:.2f}, {len(rows)} test images)")
+    print(
+        f"wrote {out}  ({len(rows)} test images; assign={assign}, "
+        f"score>={thresh:.2f}, nms={nms_iou:.2f})"
+    )
 
 
 if __name__ == "__main__":

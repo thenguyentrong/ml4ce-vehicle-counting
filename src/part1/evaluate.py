@@ -28,16 +28,23 @@ from src.part1.model import VehicleDetector
 
 
 @torch.no_grad()
-def collect_predictions(model, loader, dev, nms_iou: float = config.NMS_IOU) -> list[dict]:
+def collect_predictions(
+    model, loader, dev, nms_iou: float = config.NMS_IOU, assign: str = config.ASSIGN
+) -> list[dict]:
     """Run the model over a split; keep raw scores so any score threshold can be applied later.
 
     `nms_iou` must be fixed here (NMS happens before scores are thresholded downstream), so
     sweeping it means re-running this - cheap enough on 150 images.
+
+    `assign` must be the scheme the model was trained with, or the offsets are decoded with
+    the wrong activation and every box comes out subtly misplaced - with no error raised.
     """
     model.eval()
     results = []
     for imgs, _, _, gt_boxes in loader:
-        preds = decode_predictions(model(imgs.to(dev)), score_thresh=0.0, nms_iou=nms_iou)
+        preds = decode_predictions(
+            model(imgs.to(dev)), score_thresh=0.0, nms_iou=nms_iou, assign=assign
+        )
         for pred, gt in zip(preds, gt_boxes):
             results.append({"boxes": pred["boxes"], "scores": pred["scores"], "gt": gt})
     return results
@@ -160,10 +167,12 @@ def main() -> None:
     model.load_state_dict(ckpt["model"])
 
     # Evaluate on the same split the model was trained under, otherwise a temporally-trained
-    # model would be scored on frames a randomly-split run had used for training.
+    # model would be scored on frames a randomly-split run had used for training. Likewise the
+    # assignment scheme selects the offset activation and must match training.
     split_mode = saved.get("split_mode", config.SPLIT_MODE)
-    print(f"split mode: {split_mode}")
-    loaders = build_loaders(augment=False, split_mode=split_mode)
+    assign = saved.get("assign", config.ASSIGN)
+    print(f"split mode: {split_mode}   assign: {assign}")
+    loaders = build_loaders(augment=False, split_mode=split_mode, assign=assign)
 
     # --- tune BOTH the score threshold and the NMS IoU on VALIDATION --------------------
     # NMS matters more than it looks: one vehicle often excites two neighbouring cells, and
@@ -176,7 +185,7 @@ def main() -> None:
     best = None
     print("tuning on VAL (score threshold x NMS IoU):")
     for nms_iou in nms_grid:
-        val_res = collect_predictions(model, loaders["val"], dev, nms_iou=nms_iou)
+        val_res = collect_predictions(model, loaders["val"], dev, nms_iou=nms_iou, assign=assign)
         t, m = max(((t, prf_at_threshold(val_res, t)) for t in score_grid), key=lambda x: x[1]["f1"])
         print(f"  nms={nms_iou:.1f}  score={t:.2f}  P {m['precision']:.3f}  "
               f"R {m['recall']:.3f}  F1 {m['f1']:.3f}")
@@ -187,7 +196,7 @@ def main() -> None:
     print(f"\nbest on VAL: score={best_t:.2f}  nms={best_nms:.1f}  F1 {best_val['f1']:.3f}")
 
     # --- report on TEST at those settings -----------------------------------------------
-    test_res = collect_predictions(model, loaders["test"], dev, nms_iou=best_nms)
+    test_res = collect_predictions(model, loaders["test"], dev, nms_iou=best_nms, assign=assign)
     test = prf_at_threshold(test_res, best_t)
     precisions, recalls, ap = pr_curve(test_res)
 

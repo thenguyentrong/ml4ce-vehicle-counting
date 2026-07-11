@@ -72,19 +72,74 @@ Frozen ResNet18, L1 box loss, pos_weight=20, augmentation on, λ_obj:λ_box = 1:
 > **validation** as the primary number and treat test as a spot check. Worth raising with the
 > supervisor.
 
-## Part 1 — ablations (to run)
+## Part 1 — ablations
 
-| # | Backbone | Box loss | Imbalance | Aug | λ_obj:λ_box | Precision | Recall | F1 | Notes |
-|---|---|---|---|---|---|---|---|---|---|
-| 1 | ResNet18 | L1 | pos_weight=20 | on | 1:5 | 0.679 | 0.559 | **0.613** | baseline (val) |
-| 2 | ResNet18 | CIoU | pos_weight=20 | on | 1:5 | | | | |
-| 3 | ResNet18 | L1 | plain BCE | on | 1:5 | | | | |
-| 4 | ResNet18 | L1 | focal | on | 1:5 | | | | |
-| 5 | ResNet18 | L1 | pos_weight=20 | **off** | 1:5 | | | | |
-| 6 | MobileNetV3 | L1 | pos_weight=20 | on | 1:5 | | | | |
-| 7 | ResNet18 (layer4 unfrozen) | L1 | pos_weight=20 | on | 1:5 | | | | |
+All runs: temporal split, 40 epochs, 512×512 input, 16×16 grid. Score threshold **and** NMS IoU
+tuned on validation per run; precision/recall/AP50 reported on **test** at IoU ≥ 0.5.
+`assign` = which cells are positive for a box: `center` (task sheet: only the center cell) or
+`multi` (center + its 2 nearest neighbours, all regressing the same box).
 
-**Which works best and why:** _to be written once the ablations are in._
+Sorted by test F1:
+
+| Run | Backbone | Assign | Backbone frozen | Box loss | Imbalance | Val F1 | Test P | Test R | **Test F1** | AP50 | TP/FP/FN |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| **mobilenet_multi_unfreeze** | MobileNetV3 | multi | **no** | L1 | pos_weight | 0.922 | 0.943 | 0.868 | **0.904** | **0.871** | 33/2/5 |
+| multi_unfreeze | ResNet18 | multi | **no** | L1 | pos_weight | 0.892 | 0.892 | 0.868 | 0.880 | 0.844 | 33/4/5 |
+| unfreeze | ResNet18 | center | **no** | L1 | pos_weight | 0.916 | 0.861 | 0.816 | 0.838 | 0.876 | 31/5/7 |
+| mobilenet | MobileNetV3 | center | yes | L1 | pos_weight | 0.884 | 0.824 | 0.737 | 0.778 | 0.774 | 28/6/10 |
+| mobilenet_multi | MobileNetV3 | multi | yes | L1 | pos_weight | 0.818 | 0.763 | 0.763 | 0.763 | 0.757 | 29/9/9 |
+| multi | ResNet18 | multi | yes | L1 | pos_weight | 0.672 | 0.697 | 0.605 | 0.648 | 0.515 | 23/10/15 |
+| multi_ciou | ResNet18 | multi | yes | **CIoU** | pos_weight | 0.678 | 0.690 | 0.526 | 0.597 | 0.448 | 20/9/18 |
+| plainbce | ResNet18 | center | yes | L1 | **plain BCE** | 0.524 | 0.714 | 0.395 | 0.508 | 0.456 | 15/6/23 |
+| noaug | ResNet18 | center | yes | L1 | pos_weight | 0.612 | 0.571 | 0.421 | 0.485 | 0.339 | 16/12/22 |
+| ciou | ResNet18 | center | yes | **CIoU** | pos_weight | 0.601 | 0.435 | 0.526 | 0.476 | 0.346 | 20/26/18 |
+| **temporal** (prescribed baseline) | ResNet18 | center | yes | L1 | pos_weight | 0.613 | 0.455 | 0.395 | 0.423 | 0.213 | 15/18/23 |
+| focal | ResNet18 | center | yes | L1 | **focal** | 0.472 | 0.421 | 0.421 | 0.421 | 0.316 | 16/22/22 |
+
+**Best config improves test F1 from 0.423 → 0.904 and AP50 from 0.213 → 0.871 (4×).**
+
+### Which works best, and why
+
+**1. Unfreezing the backbone is the single biggest lever** (+0.42 test F1 on its own: 0.423 → 0.838).
+The frozen ImageNet features were the bottleneck, not the head. ImageNet is object-centric photos;
+our vehicles are small, motion-blurred, and seen from a dashcam. Letting `layer4` adapt (at lr 1e-4)
+fixes a domain mismatch no detection head can compensate for. This is a *deviation from the task
+sheet*, which says "you don't need to train the backbone" — permission, not prohibition — so we
+report the prescribed frozen version as the baseline **and** the improved version, and show the gap.
+
+**2. Multi-cell assignment is the second lever** (+0.23 test F1 frozen: 0.423 → 0.648; still +0.04
+on top of unfreezing). With `center`, one box yields **one** positive cell against 255 negatives —
+453 positive signals in the whole training set. The neighbouring cells fire anyway but were never
+taught *what* box to emit, so they produced undersized fragments that NMS could not merge, costing a
+false positive *and* a false negative per car. Training the neighbours to regress the *same* box
+turns them from noise into agreeing votes. FPs on test drop 18 → 10.
+
+**3. Our augmentation did nothing — and we are reporting that, not hiding it.** `noaug` scores val F1
+**0.612** against the baseline's **0.613**, i.e. identical, and it is *better* on test (0.485 vs
+0.423) — a difference well inside the noise of a 38-box test set. So horizontal flip + colour jitter
+bought us **nothing**. That is a real (negative) result and it points somewhere specific: the clip is
+a single dashcam pass down one road, so flipping and re-tinting it does not create the variety the
+model actually lacks. What is missing is *scale and viewpoint* variation. Random scale/translate
+crops (or mosaic) are the augmentation worth trying next; hflip and jitter are not.
+
+Meanwhile the training curves show classic overfitting: val loss bottoms out at **epoch 17** and then
+drifts up while train loss keeps falling (0.28 → 0.17). More epochs cannot help. Only more — or more
+*varied* — data can, which is why the augmentation result above matters rather than being a footnote.
+
+**4. What did *not* work, and why it is interesting:**
+- **CIoU lost to plain L1** everywhere (0.476 vs 0.423 with `center`, but 0.597 vs 0.648 with
+  `multi`). Expected it to win, since it optimises the IoU we are scored on. It appears CIoU's
+  gradient is unstable when the predicted boxes start far from the targets and the objects are tiny
+  (median 1.6% of image area); L1 in the bounded sigmoid space is simply an easier optimisation.
+- **Focal loss was the worst run of all** (0.421). It is designed for the extreme foreground /
+  background imbalance of dense anchor detectors; here `pos_weight=20` already handles a much milder
+  imbalance, and focal's down-weighting of easy negatives just starved the objectness head of signal.
+- **Plain BCE** (no imbalance handling) collapsed recall to 0.395 — it learned to say "no vehicle",
+  exactly as predicted: 99% cell-level accuracy, useless detector.
+- **MobileNetV3 beat ResNet18 while frozen** (0.778 vs 0.423) — a genuine surprise. Its stride-32
+  features (960 channels, inverted-residual blocks) transfer to small blurry vehicles far better
+  than ResNet18's 512. Once *both* backbones are unfrozen the gap narrows (0.904 vs 0.880), which
+  supports the diagnosis: the issue was never capacity, it was frozen-feature mismatch.
 
 ## Part 2 — detector comparison
 

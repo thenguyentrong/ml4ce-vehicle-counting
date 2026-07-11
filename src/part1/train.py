@@ -121,13 +121,16 @@ def train(args) -> Path:
     out_dir = config.RUNS_DIR / args.tag
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    loaders = build_loaders(augment=not args.no_augment, split_mode=args.split_mode)
+    loaders = build_loaders(
+        augment=not args.no_augment, split_mode=args.split_mode, assign=args.assign
+    )
     model = VehicleDetector(backbone=args.backbone, freeze=not args.unfreeze).to(dev)
     criterion = DetectionLoss(
         box_loss=args.box_loss,
         imbalance=args.imbalance,
         lambda_obj=args.lambda_obj,
         lambda_box=args.lambda_box,
+        assign=args.assign,
     ).to(dev)
 
     params = [p for p in model.parameters() if p.requires_grad]
@@ -208,6 +211,12 @@ def parse_args():
         default=config.SPLIT_MODE,
         choices=["temporal", "random"],
         help="temporal = honest (frames are from one video); random = leaky, for comparison",
+    )
+    p.add_argument(
+        "--assign",
+        default=config.ASSIGN,
+        choices=["center", "multi"],
+        help="center = task sheet (1 positive cell); multi = center + 2 neighbours (3x supervision)",
     )
     return p.parse_args()
 
