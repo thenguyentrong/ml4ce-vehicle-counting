@@ -14,7 +14,7 @@ there. Two ways out, both implemented so they can be compared:
 meaningless - there is no ground-truth box to regress towards. Averaging them in would drag
 every box prediction towards zero. Hence the mask.
 
-Author: Vinh Nguyen
+Author: The Vinh Nguyen Trong
 """
 
 from __future__ import annotations

@@ -15,7 +15,7 @@ single cell must predict objects spanning three orders of magnitude in area.
 The backbone is frozen (`config.FREEZE_BACKBONE`): we train ~1.2M head parameters, not 11M
 backbone parameters, on 801 training images. Unfreezing `layer4` is one of the ablations.
 
-Author: Vinh Nguyen
+Author: The Vinh Nguyen Trong
 """
 
 from __future__ import annotations
@@ -69,13 +69,13 @@ class VehicleDetector(nn.Module):
     def _build_backbone(name: str, pretrained: bool, stride: int = 32) -> tuple[nn.Module, int]:
         """Return (feature extractor with the requested output stride, output channel count).
 
-        stride=32 -> 16x16 grid, exactly what the task sheet prescribes.
-        stride=16 -> 32x32 grid. Four times as many cells, each covering 16 px instead of 32.
-                     This exists because the error analysis showed *every* missed vehicle is a
-                     small one (recall 0.77 for boxes under 2.5k px^2, 1.00 for boxes over
-                     5k px^2): at stride 32 a distant car spans barely one cell, so there is
-                     nothing for the head to localise. This is a resolution problem, and
-                     resolution is the only thing that fixes it.
+        stride=32 -> 16x16 grid, exactly what the task sheet prescribes. This is the default.
+        stride=16 -> 32x32 grid, kept only to document a NEGATIVE result. Our error analysis
+                     showed every missed vehicle is a small distant one, so a finer grid looked
+                     like the obvious fix. It was not: test F1 *fell* 0.904 -> 0.822. Cutting
+                     the backbone earlier buys spatial resolution but pays for it in semantic
+                     depth (shallower features, fewer non-linearities). Resolution and
+                     semantics trade off - which is exactly the problem an FPN exists to solve.
         """
         if stride not in (16, 32):
             raise ValueError(f"stride must be 16 or 32, got {stride}")

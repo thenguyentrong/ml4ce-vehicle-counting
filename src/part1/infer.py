@@ -8,7 +8,7 @@ vehicle also fire (the feature map is smooth, and a car straddling a cell bounda
 both cells), producing several heavily overlapping boxes for one car. NMS keeps the most
 confident and discards the rest.
 
-Author: Vinh Nguyen
+Author: The Vinh Nguyen Trong
 """
 
 from __future__ import annotations

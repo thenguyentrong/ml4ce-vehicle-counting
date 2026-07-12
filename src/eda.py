@@ -10,7 +10,7 @@ Two questions this answers before a single model is trained:
 
 Run: `python -m src.eda`  -> prints stats, writes montages to runs/eda/.
 
-Author: Vinh Nguyen
+Author: The Vinh Nguyen Trong
 """
 
 from __future__ import annotations

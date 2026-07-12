@@ -6,7 +6,7 @@ would be meaningless.
 
 Run `python -m src.data` to download the dataset and print a summary of what arrived.
 
-Author: Vinh Nguyen
+Author: The Vinh Nguyen Trong
 """
 
 from __future__ import annotations

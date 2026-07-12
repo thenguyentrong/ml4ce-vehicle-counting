@@ -10,7 +10,7 @@ encoding, the decoding or the loss - and no amount of epochs on the full dataset
 
 Every run writes runs/<tag>/: best.pt, history.json, curves.png.
 
-Author: Vinh Nguyen
+Author: The Vinh Nguyen Trong
 """
 
 from __future__ import annotations

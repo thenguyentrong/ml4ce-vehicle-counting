@@ -18,7 +18,7 @@ classify a fixed set of items, it *proposes* boxes. So:
     for *this* architecture: our head literally is a binary classifier run over 256 grid cells, so
     "is there a vehicle centered in this cell?" has a well-defined negative class.
 
-Author: Vinh Nguyen
+Author: The Vinh Nguyen Trong
 """
 
 from __future__ import annotations
@@ -69,15 +69,27 @@ def cell_confusion(model, loader, dev, score_thresh: float, assign: str) -> dict
     return {"tp": tp, "fp": fp, "fn": fn, "tn": tn}
 
 
-def recall_by_size(results: list[dict], score_thresh: float) -> list[dict]:
+def recall_by_size(
+    results: list[dict], score_thresh: float, img_size: int | None = None
+) -> list[dict]:
     """Recall bucketed by ground-truth box area — the diagnostic for the recall cliff.
 
     If the misses are concentrated in the smallest bucket, the fix is resolution (a finer
     grid / larger input), not a better loss or more epochs. If they are spread evenly, the
     fix is something else entirely. Guessing here wastes days; measuring takes a minute.
+
+    Area is a **percentage of the image**, NOT network-input pixels. Input pixels scale with
+    `img_size`, so the identical car falls into a larger bucket at 640 px than at 512 px, and
+    the buckets appear to improve when nothing has actually changed. (We got burned by exactly
+    this: it briefly looked as though a bigger input had fixed the small-object recall, when
+    the model was in fact finding the very same vehicles.) A scale-invariant unit is the only
+    way to compare models trained at different resolutions - which is this plot's entire job.
     """
-    edges = [0, 1000, 2500, 5000, 10000, np.inf]  # box area in network-input px^2
-    names = ["<1k (tiny)", "1k-2.5k", "2.5k-5k", "5k-10k", ">10k (large)"]
+    img_size = img_size or config.IMG_SIZE
+    img_area = float(img_size * img_size)
+
+    edges = [0.0, 0.5, 1.0, 2.0, 4.0, np.inf]  # % of image area
+    names = ["<0.5% (tiny)", "0.5-1%", "1-2%", "2-4%", ">4% (large)"]
     found = [0] * len(names)
     total = [0] * len(names)
 
@@ -101,8 +113,8 @@ def recall_by_size(results: list[dict], score_thresh: float) -> list[dict]:
                 if float(row[best]) >= config.IOU_MATCH:
                     matched[best] = True
 
-        areas = ((gt[:, 2] - gt[:, 0]) * (gt[:, 3] - gt[:, 1])).numpy()
-        for a, m in zip(areas, matched):
+        areas_pct = 100.0 * ((gt[:, 2] - gt[:, 0]) * (gt[:, 3] - gt[:, 1])).numpy() / img_area
+        for a, m in zip(areas_pct, matched):
             b = int(np.searchsorted(edges, a, side="right")) - 1
             b = min(b, len(names) - 1)
             total[b] += 1
@@ -185,7 +197,7 @@ def plot_recall_by_size(buckets: list[dict], out_path) -> None:
         )
     ax.set_ylim(0, 1.15)
     ax.set_ylabel("Recall @ IoU 0.5")
-    ax.set_xlabel("Ground-truth box area (network-input px²)")
+    ax.set_xlabel("Ground-truth box area (% of image — scale-invariant)")
     ax.set_title("Recall by object size — where the misses actually are")
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
@@ -241,7 +253,7 @@ def main() -> None:
 
     det = detection_confusion(results, thresh)
     cell = cell_confusion(model, loader, dev, thresh, assign)
-    buckets = recall_by_size(results, thresh)
+    buckets = recall_by_size(results, thresh, img_size=img_size)
 
     plot_confusions(det, cell, run_dir / "confusion_matrix.png")
     plot_recall_by_size(buckets, run_dir / "recall_by_size.png")

@@ -8,7 +8,7 @@ IoU >= 0.5, red = false positive), each with its confidence. Writes runs/<tag>/p
 Looking at these is not decoration - a precision of 0.38 could mean "boxes are in the wrong
 place" or "boxes are right but the labels are missing", and only the picture tells you which.
 
-Author: Vinh Nguyen
+Author: The Vinh Nguyen Trong
 """
 
 from __future__ import annotations

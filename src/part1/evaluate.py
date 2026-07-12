@@ -10,7 +10,7 @@ ten true positives and precision would be meaningless.
 The score threshold is chosen on the **validation** split and only then applied to **test**.
 Picking it on test would be tuning on the test set, which inflates the reported numbers.
 
-Author: Vinh Nguyen
+Author: The Vinh Nguyen Trong
 """
 
 from __future__ import annotations

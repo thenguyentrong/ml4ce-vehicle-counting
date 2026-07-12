@@ -7,7 +7,7 @@ straight back - a correct encoder round-trips to IoU 1.0.
 
 Run: `uv run pytest tests/test_encoding.py -v`
 
-Author: Vinh Nguyen
+Author: The Vinh Nguyen Trong
 """
 
 from __future__ import annotations

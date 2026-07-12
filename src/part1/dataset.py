@@ -15,7 +15,7 @@ Target layout, per image, on a GRID x GRID grid (16x16 for a 512x512 input at st
 All four values live in [0, 1], so the model can produce them with a plain sigmoid and no
 anchors are needed - a legitimate simplification for a single class of similarly sized objects.
 
-Author: Vinh Nguyen
+Author: The Vinh Nguyen Trong
 """
 
 from __future__ import annotations

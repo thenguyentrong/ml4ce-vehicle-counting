@@ -192,53 +192,71 @@ figure and the table must be produced by the same code path, or one of them is l
 
 ---
 
-## 2026-07-12 — killing the recall cliff: measure first, then fix
+## 2026-07-12 — the recall cliff: two failed fixes, and two mistakes of our own
 
-The best model's PR curve was strong but ended in a **cliff** — ~13% of vehicles never detected at
-*any* confidence. The temptation is to guess (more epochs? better loss? more augmentation?). Instead
-we bucketed recall by ground-truth box area (`src/part1/analysis.py`):
+The best model's PR curve is strong but ends in a **cliff** — ~13% of vehicles never detected at
+*any* confidence. Rather than guess (more epochs? better loss?), we bucketed recall by ground-truth
+box area, as a **% of the image** (`src/part1/analysis.py`):
 
 | GT box area | Recall |
 |---|---|
-| < 1k px² | 0/1 |
-| 1k–2.5k | **10/13 = 0.77** |
-| 2.5k–5k | 17/18 = 0.94 |
-| > 5k | **6/6 = 1.00** |
+| < 0.5% of image | 0/1 |
+| 0.5–1% | **11/15 = 0.73** |
+| > 1% | **22/22 = 1.00** |
 
-**Every miss is a small, distant vehicle. Large ones are found perfectly.** So the cliff is a
-*resolution* problem — at stride 32 a distant car spans barely one 32 px cell — and no loss function
-or extra epoch can fix it. That single table redirected the whole effort in about a minute.
+**Every one of the 5 misses is a small, distant vehicle. Everything above 1% of the image is found,
+perfectly.** That reads like a resolution problem — at stride 32 a distant car spans barely one 32 px
+cell. So we tried the two obvious fixes. **Both failed.**
 
-**Attempt 1 — finer grid (stride 16): FAILED.** Cutting MobileNet earlier gives a 32×32 grid, but
-test F1 *dropped* 0.904 → 0.822. Spatial resolution was bought at the price of **semantic depth**:
-the earlier features are shallower and have passed through fewer non-linearities. Resolution and
-semantics trade off, and here the trade lost. This is exactly the problem a **Feature Pyramid
-Network** solves — upsample the deep stride-32 features and fuse them with the shallow stride-16 ones
-so you get both — and it is the obvious next step if we push Part 1 further.
+**Attempt 1 — finer grid (stride 16): FAILED.** A 32×32 grid dropped test F1 0.904 → 0.822. Spatial
+resolution was bought at the price of **semantic depth**: cutting the backbone earlier gives shallower
+features that have passed through fewer non-linearities. Resolution and semantics trade off, and here
+the trade lost. This is precisely the problem a **Feature Pyramid Network** solves — upsample the deep
+stride-32 features and fuse them with the shallow stride-16 ones, so you get both. That, or more data,
+is the real fix for small objects; it is the honest next step.
 
-**Attempt 2 — larger input (640 px): WORKED.** Same full-depth backbone, just more pixels per car.
-**Test AP50 0.871 → 0.935, F1 0.904 → 0.917, precision 0.971 with a single false positive on the
-whole test set.** Recall in the 5k–10k bucket went to 14/14.
+**Attempt 2 — larger input (640 / 768 px): NO REAL EFFECT.** 640 px *looked* like a win (F1 0.904 →
+0.917, AP50 0.871 → 0.935) and we nearly reported it as one. Then we looked at the counts:
 
-**Attempt 3 — even larger (768 px): FAILED.** Recall collapsed 0.868 → 0.711. So input size is a
-*sweet spot*, not a monotonic knob: at a fixed 40-epoch budget a bigger input is a harder
-optimisation, and each cell sees proportionally less context. Worth stating plainly in the
-presentation, because "just make it bigger" is the obvious wrong lesson to draw from attempt 2.
+| Input | TP | FP | FN | Recall |
+|---|---|---|---|---|
+| 512 (task sheet) | 33 | 2 | 5 | 0.868 |
+| 640 | **33** | 1 | **5** | **0.868** |
+| 768 | 32 | 2 | 6 | 0.842 |
 
-**Confusion matrices** (asked for, and genuinely useful — `analysis.py` writes both):
-- *Detection level*: TP 33 / FP 1 / FN 5. Background-vs-background is **undefined** for a detector —
+**640 px finds the exact same 33 vehicles as 512 px.** Identical TP, identical FN — not one additional
+small car recovered. All it did was drop a single false positive and re-order the confidence ranking,
+which is what moved AP50. On a 38-box test set one box is ~2.6 points of recall, so 512 / 640 / 768 are
+**statistically indistinguishable**. We keep the **512 px the task sheet specifies**: the bigger input
+bought nothing real, and claiming a win on a one-box difference would be dishonest.
+
+### Two mistakes we made here, recorded because they are the lesson
+
+1. **We evaluated a model that was still training.** The first 768 px numbers (F1 0.818, recall 0.711)
+   came from a mid-training checkpoint read while the job was still running. The finished model scores
+   0.889. Every model is now evaluated only after training completes.
+2. **We bucketed box area in network-input pixels.** Those scale with `img_size` — so the *same* car
+   lands in a bigger bucket at 640 px than at 512 px, and the buckets appear to improve when nothing
+   has changed. This is what made a bigger input look like it had fixed small-object recall. Areas are
+   now a scale-invariant **% of the image**.
+
+Both errors pointed the same way: they flattered the change we were hoping would work. That is not a
+coincidence, and it is the reason to check a result that comes out the way you wanted it to.
+
+**Confusion matrices** (`analysis.py` writes both):
+- *Detection level*: TP 33 / FP 2 / FN 5. Background-vs-background is **undefined** for a detector —
   there is no "correctly predicted nothing" when the negative class is every possible box — so that
   cell is marked n/a rather than filled with a fake number.
-- *Grid-cell objectness*: TP 83 / FP 8 / FN 30 / **TN 19,879**. This one is a real 2×2, because the
-  head literally is a binary classifier over grid cells. The 19,879 : 83 ratio **is** the class
-  imbalance, in raw numbers — the reason plain BCE collapses to "no vehicle" and `pos_weight` exists.
+- *Grid-cell objectness*: TP 86 / FP 15 / FN 26 / **TN 12,673**. A real 2×2, because the head literally
+  *is* a binary classifier over grid cells. The 12,673 : 86 ratio **is** the class imbalance in raw
+  numbers — the reason plain BCE collapses to "no vehicle" and `pos_weight` has to exist.
 
-**Test-suite lesson.** Flipping the config defaults to the winning setup (`multi`, MobileNetV3,
-640 px) broke 5 tests — they had been silently inheriting `config.ASSIGN` / `config.IMG_SIZE` instead
-of pinning the geometry they were asserting. Fixed by making each test state its own scheme and grid
-explicitly. A test that reads a mutable global is not testing what it claims to.
+**Test-suite lesson.** Changing the config defaults broke 5 tests, because they had been silently
+inheriting `config.ASSIGN` / `config.IMG_SIZE` instead of pinning the geometry they assert. Fixed by
+making each test state its own scheme and grid. A test that reads a mutable global is not testing what
+it claims to.
 
-**Final Part 1 result: test P 0.971 / R 0.868 / F1 0.917 / AP50 0.935**, against the prescribed
-baseline's 0.455 / 0.395 / 0.423 / 0.213.
+**Final Part 1 result (512 px, exactly as specified): test P 0.943 / R 0.868 / F1 0.904 / AP50 0.871**,
+against the prescribed baseline's 0.455 / 0.395 / 0.423 / 0.213.
 
 ---

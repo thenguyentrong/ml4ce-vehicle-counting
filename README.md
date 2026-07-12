@@ -2,7 +2,7 @@
 
 Machine Learning for Civil Engineering, RWTH Aachen University — summer semester 2026.
 
-**Team:** Vinh Nguyen, Azemi Rexhep
+**Team:** The Vinh Nguyen Trong, Azemi Rexhep
 
 Detection of vehicles in images and counting of vehicles in a traffic video, in two parts:
 
@@ -67,12 +67,15 @@ data/                dataset + traffic video                (git-ignored)
 **Part 1.** Test-set precision/recall at IoU ≥ 0.5, temporal split. Score threshold and NMS IoU tuned
 on validation; 12 configurations compared in [`docs/experiments.md`](docs/experiments.md).
 
+All runs use the **512 × 512 input and 16 × 16 grid the task sheet specifies**.
+
 | Configuration | Precision | Recall | F1 | AP50 |
 |---|---|---|---|---|
-| **Best** — MobileNetV3, multi-cell assign, fine-tuned backbone, 640 px | **0.971** | **0.868** | **0.917** | **0.935** |
-| Task-sheet baseline — frozen ResNet18, one positive cell/box, 512 px | 0.455 | 0.395 | 0.423 | 0.213 |
+| **Best** — MobileNetV3, multi-cell assign, fine-tuned backbone | **0.943** | **0.868** | **0.904** | **0.871** |
+| Task-sheet baseline — frozen ResNet18, one positive cell per box | 0.455 | 0.395 | 0.423 | 0.213 |
 
-Three changes account for almost all of it:
+`python -m src.part1.train` with no flags reproduces the **task-sheet baseline**; every deviation we
+tested is an explicit flag. Two of them account for almost all of the gain:
 
 - **Unfreezing the backbone** (+0.42 F1 alone). The frozen ImageNet features — object-centric photos —
   simply do not fit small, motion-blurred vehicles seen from a dashcam, and no detection head can
@@ -82,10 +85,12 @@ Three changes account for almost all of it:
   453 positive signals across the whole training set, and leaves the neighbouring cells — which fire
   anyway — untrained, so they emit fragments that cost a false positive *and* a false negative on the
   same car. Training the center cell plus its two nearest neighbours on the same box fixes it.
-- **A 640 px input** (AP50 0.871 → 0.935). Bucketing recall by object size showed that *every* missed
-  vehicle was a small distant one, while large vehicles were found perfectly — a resolution problem,
-  not a training one. Note 768 px was **worse**, and a finer stride-16 grid was worse still: it trades
-  semantic depth for spatial resolution. See [`docs/experiments.md`](docs/experiments.md).
+
+What did **not** work is reported too, in [`docs/experiments.md`](docs/experiments.md): CIoU lost to
+plain L1, focal loss was the worst run of all, our augmentation changed nothing, and neither a larger
+input (640 / 768 px) nor a finer stride-16 grid recovered a single additional vehicle — every one of
+the 5 remaining misses is a car smaller than 1% of the image. The real fix for those is a feature
+pyramid, or more data.
 
 Two findings worth knowing before reading those numbers:
 
