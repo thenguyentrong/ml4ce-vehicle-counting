@@ -35,7 +35,7 @@ def test_roundtrip_recovers_boxes_exactly():
         dtype=np.float32,
     )
 
-    obj, box, collisions = encode_target(boxes, img_w, img_h)
+    obj, box, collisions = encode_target(boxes, img_w, img_h, assign="center")
     assert collisions == 0, "these four boxes are far apart; none should collide"
     assert obj.sum() == len(boxes), "one positive cell per box"
 
@@ -53,7 +53,9 @@ def test_roundtrip_recovers_boxes_exactly():
 def test_center_lands_in_the_claimed_cell():
     """The positive cell must be the one containing the box *center* - the task sheet's rule."""
     boxes = np.array([[320.0, 160.0, 352.0, 192.0]], dtype=np.float32)  # center (336, 176)
-    obj, _, _ = encode_target(boxes, 512, 512)  # already at network scale: no rescaling
+    obj, _, _ = encode_target(
+        boxes, 512, 512, grid=16, img_size=512, assign="center"
+    )  # already at network scale
 
     j, i = torch.nonzero(obj)[0].tolist()  # row, column
     assert (i, j) == (336 // 32, 176 // 32) == (10, 5)
@@ -65,7 +67,7 @@ def test_offsets_stay_in_unit_range():
     for _ in range(200):
         x1, y1 = rng.uniform(0, 600), rng.uniform(0, 330)
         boxes = np.array([[x1, y1, x1 + rng.uniform(20, 70), y1 + rng.uniform(18, 45)]], np.float32)
-        _, box, _ = encode_target(boxes, 676, 380)
+        _, box, _ = encode_target(boxes, 676, 380, assign="center")
 
         vals = box[box != 0]
         assert (vals >= 0).all() and (vals <= 1).all(), f"target outside [0,1]: {vals}"
@@ -77,7 +79,7 @@ def test_collision_is_detected_and_reported():
         [[100.0, 100.0, 130.0, 120.0], [102.0, 101.0, 132.0, 121.0]],  # nearly identical centers
         dtype=np.float32,
     )
-    obj, _, collisions = encode_target(boxes, 676, 380)
+    obj, _, collisions = encode_target(boxes, 676, 380, assign="center")
     assert collisions == 1, "the second box shares a cell and must be counted as lost"
     assert obj.sum() == 1, "one cell can only hold one box"
 
@@ -89,7 +91,7 @@ def test_decode_boxes_matches_decode_target():
     against another - and every metric silently understates the model.
     """
     boxes = np.array([[100.0, 150.0, 200.0, 192.0], [400.0, 200.0, 500.0, 250.0]], np.float32)
-    obj, box, _ = encode_target(boxes, 676, 380)
+    obj, box, _ = encode_target(boxes, 676, 380, assign="center")
 
     from_target = decode_target(obj, box)
     from_loss = decode_boxes(box.unsqueeze(0))[0].permute(1, 2, 0)[obj > 0.5]
@@ -102,7 +104,7 @@ def test_multi_assign_marks_three_cells_per_box():
     """'multi' must light up the center cell plus the two neighbours the center leans toward."""
     # Center at (336, 176) -> grid (10.5, 5.5): leans right and down -> cells (10,5),(11,5),(10,6).
     boxes = np.array([[320.0, 160.0, 352.0, 192.0]], dtype=np.float32)
-    obj, _, _ = encode_target(boxes, 512, 512, assign="multi")
+    obj, _, _ = encode_target(boxes, 512, 512, grid=16, img_size=512, assign="multi")
 
     cells = {(int(i), int(j)) for j, i in torch.nonzero(obj).tolist()}
     assert cells == {(10, 5), (11, 5), (10, 6)}, cells
@@ -157,7 +159,7 @@ def test_empty_and_multi_box_images(n):
     boxes = np.array([[50 + 80 * k, 50, 110 + 80 * k, 90] for k in range(n)], dtype=np.float32)
     boxes = boxes.reshape(-1, 4) if n else np.zeros((0, 4), dtype=np.float32)
 
-    obj, box, collisions = encode_target(boxes, 676, 380)
+    obj, box, collisions = encode_target(boxes, 676, 380, assign="center")
     assert obj.shape == (config.GRID, config.GRID)
     assert box.shape == (4, config.GRID, config.GRID)
     assert obj.sum() == n - collisions

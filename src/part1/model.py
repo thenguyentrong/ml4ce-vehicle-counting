@@ -35,10 +35,12 @@ class VehicleDetector(nn.Module):
         backbone: str = config.BACKBONE,
         freeze: bool = config.FREEZE_BACKBONE,
         pretrained: bool = True,
+        stride: int = config.STRIDE,
     ):
         super().__init__()
         self.backbone_name = backbone
-        self.backbone, out_channels = self._build_backbone(backbone, pretrained)
+        self.stride = stride
+        self.backbone, out_channels = self._build_backbone(backbone, pretrained, stride)
 
         if freeze:
             for p in self.backbone.parameters():
@@ -64,24 +66,50 @@ class VehicleDetector(nn.Module):
         nn.init.constant_(self.head[-1].bias[0], -4.6)  # sigmoid(-4.6) ~= 0.01
 
     @staticmethod
-    def _build_backbone(name: str, pretrained: bool) -> tuple[nn.Module, int]:
-        """Return (feature extractor with output stride 32, number of output channels)."""
+    def _build_backbone(name: str, pretrained: bool, stride: int = 32) -> tuple[nn.Module, int]:
+        """Return (feature extractor with the requested output stride, output channel count).
+
+        stride=32 -> 16x16 grid, exactly what the task sheet prescribes.
+        stride=16 -> 32x32 grid. Four times as many cells, each covering 16 px instead of 32.
+                     This exists because the error analysis showed *every* missed vehicle is a
+                     small one (recall 0.77 for boxes under 2.5k px^2, 1.00 for boxes over
+                     5k px^2): at stride 32 a distant car spans barely one cell, so there is
+                     nothing for the head to localise. This is a resolution problem, and
+                     resolution is the only thing that fixes it.
+        """
+        if stride not in (16, 32):
+            raise ValueError(f"stride must be 16 or 32, got {stride}")
+
         if name == "resnet18":
             weights = torchvision.models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None
             net = torchvision.models.resnet18(weights=weights)
-            # Everything except avgpool and fc -> output is [B, 512, H/32, W/32].
-            body = nn.Sequential(
-                net.conv1, net.bn1, net.relu, net.maxpool,
-                net.layer1, net.layer2, net.layer3, net.layer4,
-            )
-            return body, 512
+            stem = [net.conv1, net.bn1, net.relu, net.maxpool, net.layer1, net.layer2, net.layer3]
+            if stride == 16:
+                return nn.Sequential(*stem), 256  # through layer3 -> stride 16, 256 ch
+            return nn.Sequential(*stem, net.layer4), 512  # + layer4 -> stride 32, 512 ch
 
         if name == "mobilenet_v3_large":
             weights = (
                 torchvision.models.MobileNet_V3_Large_Weights.IMAGENET1K_V1 if pretrained else None
             )
             net = torchvision.models.mobilenet_v3_large(weights=weights)
-            return net.features, 960  # also stride 32
+            if stride == 32:
+                return net.features, 960
+
+            # Find where MobileNet's feature stack reaches stride 16 by probing it, rather
+            # than hard-coding a block index that a torchvision update could silently shift.
+            with torch.no_grad():
+                x = torch.zeros(1, 3, 256, 256)
+                cut, channels = None, None
+                for k, block in enumerate(net.features):
+                    x = block(x)
+                    if x.shape[-1] == 256 // 16:  # first block at stride 16
+                        cut, channels = k + 1, x.shape[1]
+                    elif x.shape[-1] < 256 // 16:  # gone past it, into stride 32
+                        break
+            if cut is None:
+                raise RuntimeError("could not locate a stride-16 stage in mobilenet_v3_large")
+            return nn.Sequential(*list(net.features)[:cut]), channels
 
         raise ValueError(f"unknown backbone {name!r} (expected resnet18 or mobilenet_v3_large)")
 

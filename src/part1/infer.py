@@ -25,7 +25,7 @@ def decode_predictions(
     pred: torch.Tensor,
     score_thresh: float = config.SCORE_THRESH,
     nms_iou: float = config.NMS_IOU,
-    img_size: int = config.IMG_SIZE,
+    img_size: int | None = None,
     assign: str = config.ASSIGN,
 ) -> list[dict[str, torch.Tensor]]:
     """(B, 5, G, G) raw logits -> one dict per image with `boxes` (N,4) and `scores` (N,).
@@ -35,6 +35,7 @@ def decode_predictions(
 
     `assign` must match what the model was TRAINED with - it selects the offset activation.
     """
+    img_size = img_size or config.IMG_SIZE
     scores_grid = torch.sigmoid(pred[:, 0])  # (B, G, G)
     boxes_grid = decode_boxes(activate_box(pred[:, 1:], assign), img_size)  # (B, 4, G, G)
 

@@ -57,10 +57,13 @@ def main() -> None:
     ckpt = torch.load(run_dir / "best.pt", map_location=dev, weights_only=False)
     saved = ckpt.get("config", {})
 
+    stride = saved.get("stride", config.STRIDE)
+    img_size = saved.get("img_size", config.IMG_SIZE)
     model = VehicleDetector(
         backbone=saved.get("backbone", config.BACKBONE),
         freeze=not saved.get("unfreeze", False),
         pretrained=False,
+        stride=stride,
     ).to(dev)
     model.load_state_dict(ckpt["model"])
     model.eval()
@@ -78,14 +81,19 @@ def main() -> None:
     assign = saved.get("assign", config.ASSIGN)
 
     loaders = build_loaders(
-        augment=False, split_mode=saved.get("split_mode", config.SPLIT_MODE), assign=assign
+        augment=False,
+        split_mode=saved.get("split_mode", config.SPLIT_MODE),
+        assign=assign,
+        stride=stride,
+        img_size=img_size,
     )
 
     rows = []
     with torch.no_grad():
         for imgs, _, _, gts in loaders["test"]:
             preds = decode_predictions(
-                model(imgs.to(dev)), score_thresh=thresh, nms_iou=nms_iou, assign=assign
+                model(imgs.to(dev)), score_thresh=thresh, nms_iou=nms_iou, assign=assign,
+                img_size=img_size
             )
             for img_t, pred, gt in zip(imgs, preds, gts):
                 if len(gt) == 0:

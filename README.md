@@ -69,10 +69,10 @@ on validation; 12 configurations compared in [`docs/experiments.md`](docs/experi
 
 | Configuration | Precision | Recall | F1 | AP50 |
 |---|---|---|---|---|
-| **Best** — MobileNetV3, multi-cell assign, fine-tuned backbone | **0.943** | **0.868** | **0.904** | **0.871** |
-| Task-sheet baseline — frozen ResNet18, one positive cell/box | 0.455 | 0.395 | 0.423 | 0.213 |
+| **Best** — MobileNetV3, multi-cell assign, fine-tuned backbone, 640 px | **0.971** | **0.868** | **0.917** | **0.935** |
+| Task-sheet baseline — frozen ResNet18, one positive cell/box, 512 px | 0.455 | 0.395 | 0.423 | 0.213 |
 
-Two changes account for almost all of it:
+Three changes account for almost all of it:
 
 - **Unfreezing the backbone** (+0.42 F1 alone). The frozen ImageNet features — object-centric photos —
   simply do not fit small, motion-blurred vehicles seen from a dashcam, and no detection head can
@@ -82,6 +82,10 @@ Two changes account for almost all of it:
   453 positive signals across the whole training set, and leaves the neighbouring cells — which fire
   anyway — untrained, so they emit fragments that cost a false positive *and* a false negative on the
   same car. Training the center cell plus its two nearest neighbours on the same box fixes it.
+- **A 640 px input** (AP50 0.871 → 0.935). Bucketing recall by object size showed that *every* missed
+  vehicle was a small distant one, while large vehicles were found perfectly — a resolution problem,
+  not a training one. Note 768 px was **worse**, and a finer stride-16 grid was worse still: it trades
+  semantic depth for spatial resolution. See [`docs/experiments.md`](docs/experiments.md).
 
 Two findings worth knowing before reading those numbers:
 

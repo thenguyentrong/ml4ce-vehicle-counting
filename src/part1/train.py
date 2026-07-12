@@ -122,9 +122,15 @@ def train(args) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     loaders = build_loaders(
-        augment=not args.no_augment, split_mode=args.split_mode, assign=args.assign
+        augment=not args.no_augment,
+        split_mode=args.split_mode,
+        assign=args.assign,
+        stride=args.stride,
+        img_size=args.img_size,
     )
-    model = VehicleDetector(backbone=args.backbone, freeze=not args.unfreeze).to(dev)
+    model = VehicleDetector(
+        backbone=args.backbone, freeze=not args.unfreeze, stride=args.stride
+    ).to(dev)
     criterion = DetectionLoss(
         box_loss=args.box_loss,
         imbalance=args.imbalance,
@@ -217,6 +223,20 @@ def parse_args():
         default=config.ASSIGN,
         choices=["center", "multi"],
         help="center = task sheet (1 positive cell); multi = center + 2 neighbours (3x supervision)",
+    )
+    p.add_argument(
+        "--img-size",
+        type=int,
+        default=config.IMG_SIZE,
+        help="network input size. Larger = small distant vehicles get more pixels, which the "
+             "error analysis says is where every missed detection lives.",
+    )
+    p.add_argument(
+        "--stride",
+        type=int,
+        default=config.STRIDE,
+        choices=[16, 32],
+        help="32 = 16x16 grid (task sheet); 16 = 32x32 grid (better on small distant vehicles)",
     )
     return p.parse_args()
 

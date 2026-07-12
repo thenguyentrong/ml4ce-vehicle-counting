@@ -47,13 +47,14 @@ def activate_box(raw: torch.Tensor, assign: str = config.ASSIGN) -> torch.Tensor
     return torch.cat([offsets, sizes], dim=1)
 
 
-def decode_boxes(box_params: torch.Tensor, img_size: int = config.IMG_SIZE) -> torch.Tensor:
+def decode_boxes(box_params: torch.Tensor, img_size: int | None = None) -> torch.Tensor:
     """(B, 4, G, G) of sigmoid-space (off_x, off_y, w, h) -> (B, 4, G, G) of (x1, y1, x2, y2) px.
 
     Differentiable, so it can be used inside the CIoU loss. Mirrors
     `dataset.decode_target` exactly - if these two ever disagree, the model trains against
     one coordinate convention and is evaluated against another.
     """
+    img_size = img_size or config.IMG_SIZE
     b, _, gy, gx = box_params.shape
     cell = img_size / gx
 

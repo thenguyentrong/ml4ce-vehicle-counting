@@ -69,8 +69,8 @@ def encode_target(
     boxes: np.ndarray,
     img_w: int,
     img_h: int,
-    grid: int = config.GRID,
-    img_size: int = config.IMG_SIZE,
+    grid: int | None = None,
+    img_size: int | None = None,
     assign: str = config.ASSIGN,
 ) -> tuple[torch.Tensor, torch.Tensor, int]:
     """Turn pixel boxes from the *original* image into a grid target.
@@ -90,6 +90,9 @@ def encode_target(
 
     A cell is positive if a box *center* falls inside it - exactly as the task sheet states.
     """
+    img_size = img_size or config.IMG_SIZE
+    grid = grid or config.GRID
+
     obj = torch.zeros((grid, grid), dtype=torch.float32)
     box = torch.zeros((4, grid, grid), dtype=torch.float32)
     collisions = 0
@@ -132,13 +135,17 @@ def encode_target(
 def decode_target(
     obj: torch.Tensor,
     box: torch.Tensor,
-    grid: int = config.GRID,
-    img_size: int = config.IMG_SIZE,
+    grid: int | None = None,
+    img_size: int | None = None,
 ) -> torch.Tensor:
     """Exact inverse of `encode_target`: grid target -> (N, 4) boxes in `img_size` pixels.
 
-    Used by the round-trip test and, with predicted tensors, by inference.
+    Used by the round-trip test and, with predicted tensors, by inference. The grid size is
+    read off the tensor rather than taken from config, so this stays correct when the stride
+    (and therefore the grid) changes.
     """
+    img_size = img_size or config.IMG_SIZE
+    grid = grid or obj.shape[-1]
     cell = img_size / grid
     js, is_ = torch.nonzero(obj > 0.5, as_tuple=True)  # rows, columns
 
@@ -167,13 +174,16 @@ class VehicleGridDataset(Dataset):
         images_dir,
         augment: bool = False,
         assign: str = config.ASSIGN,
+        grid: int = config.GRID,
+        img_size: int | None = None,
     ):
         self.images = images
         self.df = df
         self.images_dir = images_dir
         self.augment = augment
         self.assign = assign
-        self.img_size = config.IMG_SIZE
+        self.grid = grid
+        self.img_size = img_size or config.IMG_SIZE
 
     def __len__(self) -> int:
         return len(self.images)
@@ -195,7 +205,9 @@ class VehicleGridDataset(Dataset):
         arr = (arr - IMAGENET_MEAN) / IMAGENET_STD
         img = torch.from_numpy(arr).permute(2, 0, 1).contiguous()  # HWC -> CHW
 
-        obj, box, _ = encode_target(boxes, img_w, img_h, assign=self.assign)
+        obj, box, _ = encode_target(
+            boxes, img_w, img_h, grid=self.grid, img_size=self.img_size, assign=self.assign
+        )
 
         # Ground-truth boxes in network pixels, for evaluation.
         scale = np.array([self.img_size / img_w, self.img_size / img_h] * 2, dtype=np.float32)
@@ -238,16 +250,30 @@ def build_loaders(
     augment: bool = True,
     split_mode: str = config.SPLIT_MODE,
     assign: str = config.ASSIGN,
+    stride: int = config.STRIDE,
+    img_size: int | None = None,
 ) -> dict[str, DataLoader]:
-    """DataLoaders for train/val/test, all sharing the split from `src.data`."""
+    """DataLoaders for train/val/test, all sharing the split from `src.data`.
+
+    `stride` sets the grid resolution: 32 -> 16x16 (task sheet), 16 -> 32x32 (better on the
+    small distant vehicles that account for every one of our missed detections).
+    """
     paths = data_mod.resolve_dataset_paths()
     df = data_mod.load_annotations(paths)
     splits = data_mod.make_splits(data_mod.list_images(paths), mode=split_mode)
+    img_size = img_size or config.IMG_SIZE
+    grid = img_size // stride
 
     loaders = {}
     for split, names in splits.items():
         ds = VehicleGridDataset(
-            names, df, paths.images_dir, augment=(augment and split == "train"), assign=assign
+            names,
+            df,
+            paths.images_dir,
+            augment=(augment and split == "train"),
+            assign=assign,
+            grid=grid,
+            img_size=img_size,
         )
         loaders[split] = DataLoader(
             ds,

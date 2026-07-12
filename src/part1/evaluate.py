@@ -29,21 +29,27 @@ from src.part1.model import VehicleDetector
 
 @torch.no_grad()
 def collect_predictions(
-    model, loader, dev, nms_iou: float = config.NMS_IOU, assign: str = config.ASSIGN
+    model,
+    loader,
+    dev,
+    nms_iou: float = config.NMS_IOU,
+    assign: str = config.ASSIGN,
+    img_size: int | None = None,
 ) -> list[dict]:
     """Run the model over a split; keep raw scores so any score threshold can be applied later.
 
     `nms_iou` must be fixed here (NMS happens before scores are thresholded downstream), so
     sweeping it means re-running this - cheap enough on 150 images.
 
-    `assign` must be the scheme the model was trained with, or the offsets are decoded with
-    the wrong activation and every box comes out subtly misplaced - with no error raised.
+    `assign` and `img_size` must be what the model was TRAINED with. `assign` selects the
+    offset activation and `img_size` sets the pixel scale of the decoded boxes; get either
+    wrong and the boxes come out subtly misplaced, with no error raised.
     """
     model.eval()
     results = []
     for imgs, _, _, gt_boxes in loader:
         preds = decode_predictions(
-            model(imgs.to(dev)), score_thresh=0.0, nms_iou=nms_iou, assign=assign
+            model(imgs.to(dev)), score_thresh=0.0, nms_iou=nms_iou, assign=assign, img_size=img_size
         )
         for pred, gt in zip(preds, gt_boxes):
             results.append({"boxes": pred["boxes"], "scores": pred["scores"], "gt": gt})
@@ -159,10 +165,13 @@ def main() -> None:
     ckpt = torch.load(run_dir / "best.pt", map_location=dev, weights_only=False)
 
     saved = ckpt.get("config", {})
+    stride = saved.get("stride", config.STRIDE)
+    img_size = saved.get("img_size", config.IMG_SIZE)
     model = VehicleDetector(
         backbone=saved.get("backbone", config.BACKBONE),
         freeze=not saved.get("unfreeze", False),
         pretrained=False,
+        stride=stride,
     ).to(dev)
     model.load_state_dict(ckpt["model"])
 
@@ -172,7 +181,9 @@ def main() -> None:
     split_mode = saved.get("split_mode", config.SPLIT_MODE)
     assign = saved.get("assign", config.ASSIGN)
     print(f"split mode: {split_mode}   assign: {assign}")
-    loaders = build_loaders(augment=False, split_mode=split_mode, assign=assign)
+    loaders = build_loaders(
+        augment=False, split_mode=split_mode, assign=assign, stride=stride, img_size=img_size
+    )
 
     # --- tune BOTH the score threshold and the NMS IoU on VALIDATION --------------------
     # NMS matters more than it looks: one vehicle often excites two neighbouring cells, and
@@ -185,7 +196,9 @@ def main() -> None:
     best = None
     print("tuning on VAL (score threshold x NMS IoU):")
     for nms_iou in nms_grid:
-        val_res = collect_predictions(model, loaders["val"], dev, nms_iou=nms_iou, assign=assign)
+        val_res = collect_predictions(
+            model, loaders["val"], dev, nms_iou=nms_iou, assign=assign, img_size=img_size
+        )
         t, m = max(((t, prf_at_threshold(val_res, t)) for t in score_grid), key=lambda x: x[1]["f1"])
         print(f"  nms={nms_iou:.1f}  score={t:.2f}  P {m['precision']:.3f}  "
               f"R {m['recall']:.3f}  F1 {m['f1']:.3f}")
@@ -196,7 +209,9 @@ def main() -> None:
     print(f"\nbest on VAL: score={best_t:.2f}  nms={best_nms:.1f}  F1 {best_val['f1']:.3f}")
 
     # --- report on TEST at those settings -----------------------------------------------
-    test_res = collect_predictions(model, loaders["test"], dev, nms_iou=best_nms, assign=assign)
+    test_res = collect_predictions(
+        model, loaders["test"], dev, nms_iou=best_nms, assign=assign, img_size=img_size
+    )
     test = prf_at_threshold(test_res, best_t)
     precisions, recalls, ap = pr_curve(test_res)
 

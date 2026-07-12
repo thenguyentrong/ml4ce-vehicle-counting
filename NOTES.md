@@ -182,12 +182,63 @@ actually reach the range the encoder emits.
   scale/translate crops are the thing to try, not more colour tricks. Reporting this as a negative
   result rather than quietly dropping the row.
 
-**Bug caught by looking at the pictures, not the metrics.** The first render of the best model showed
+**Bug caught by looking at the pictures, not the metrics (round 1).** The first render of the best model showed
 red "false positives" stacked on cars the metrics had scored as clean. The metrics were right and the
 *visualiser* was wrong: it decoded a `multi` model with the `center` offset activation and used the
 default NMS instead of the tuned one. Both are silent — the boxes come out subtly shifted and
 duplicated, with no error. Fixed by making `visualize.py` read `assign` and `nms_iou` from the
 checkpoint and metrics, exactly as `evaluate.py` does. A good reminder for the presentation: the
 figure and the table must be produced by the same code path, or one of them is lying.
+
+---
+
+## 2026-07-12 — killing the recall cliff: measure first, then fix
+
+The best model's PR curve was strong but ended in a **cliff** — ~13% of vehicles never detected at
+*any* confidence. The temptation is to guess (more epochs? better loss? more augmentation?). Instead
+we bucketed recall by ground-truth box area (`src/part1/analysis.py`):
+
+| GT box area | Recall |
+|---|---|
+| < 1k px² | 0/1 |
+| 1k–2.5k | **10/13 = 0.77** |
+| 2.5k–5k | 17/18 = 0.94 |
+| > 5k | **6/6 = 1.00** |
+
+**Every miss is a small, distant vehicle. Large ones are found perfectly.** So the cliff is a
+*resolution* problem — at stride 32 a distant car spans barely one 32 px cell — and no loss function
+or extra epoch can fix it. That single table redirected the whole effort in about a minute.
+
+**Attempt 1 — finer grid (stride 16): FAILED.** Cutting MobileNet earlier gives a 32×32 grid, but
+test F1 *dropped* 0.904 → 0.822. Spatial resolution was bought at the price of **semantic depth**:
+the earlier features are shallower and have passed through fewer non-linearities. Resolution and
+semantics trade off, and here the trade lost. This is exactly the problem a **Feature Pyramid
+Network** solves — upsample the deep stride-32 features and fuse them with the shallow stride-16 ones
+so you get both — and it is the obvious next step if we push Part 1 further.
+
+**Attempt 2 — larger input (640 px): WORKED.** Same full-depth backbone, just more pixels per car.
+**Test AP50 0.871 → 0.935, F1 0.904 → 0.917, precision 0.971 with a single false positive on the
+whole test set.** Recall in the 5k–10k bucket went to 14/14.
+
+**Attempt 3 — even larger (768 px): FAILED.** Recall collapsed 0.868 → 0.711. So input size is a
+*sweet spot*, not a monotonic knob: at a fixed 40-epoch budget a bigger input is a harder
+optimisation, and each cell sees proportionally less context. Worth stating plainly in the
+presentation, because "just make it bigger" is the obvious wrong lesson to draw from attempt 2.
+
+**Confusion matrices** (asked for, and genuinely useful — `analysis.py` writes both):
+- *Detection level*: TP 33 / FP 1 / FN 5. Background-vs-background is **undefined** for a detector —
+  there is no "correctly predicted nothing" when the negative class is every possible box — so that
+  cell is marked n/a rather than filled with a fake number.
+- *Grid-cell objectness*: TP 83 / FP 8 / FN 30 / **TN 19,879**. This one is a real 2×2, because the
+  head literally is a binary classifier over grid cells. The 19,879 : 83 ratio **is** the class
+  imbalance, in raw numbers — the reason plain BCE collapses to "no vehicle" and `pos_weight` exists.
+
+**Test-suite lesson.** Flipping the config defaults to the winning setup (`multi`, MobileNetV3,
+640 px) broke 5 tests — they had been silently inheriting `config.ASSIGN` / `config.IMG_SIZE` instead
+of pinning the geometry they were asserting. Fixed by making each test state its own scheme and grid
+explicitly. A test that reads a mutable global is not testing what it claims to.
+
+**Final Part 1 result: test P 0.971 / R 0.868 / F1 0.917 / AP50 0.935**, against the prescribed
+baseline's 0.455 / 0.395 / 0.423 / 0.213.
 
 ---

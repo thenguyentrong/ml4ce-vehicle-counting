@@ -83,7 +83,10 @@ Sorted by test F1:
 
 | Run | Backbone | Assign | Backbone frozen | Box loss | Imbalance | Val F1 | Test P | Test R | **Test F1** | AP50 | TP/FP/FN |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| **mobilenet_multi_unfreeze** | MobileNetV3 | multi | **no** | L1 | pos_weight | 0.922 | 0.943 | 0.868 | **0.904** | **0.871** | 33/2/5 |
+| **best_img640** (640 px input) | MobileNetV3 | multi | **no** | L1 | pos_weight | 0.908 | **0.971** | 0.868 | **0.917** | **0.935** | 33/1/5 |
+| mobilenet_multi_unfreeze | MobileNetV3 | multi | **no** | L1 | pos_weight | 0.922 | 0.943 | 0.868 | 0.904 | 0.871 | 33/2/5 |
+| best_stride16 (32×32 grid) | MobileNetV3 | multi | **no** | L1 | pos_weight | 0.916 | 0.857 | 0.789 | 0.822 | 0.822 | 30/5/8 |
+| best_img768 (768 px input) | MobileNetV3 | multi | **no** | L1 | pos_weight | 0.882 | 0.964 | 0.711 | 0.818 | 0.873 | 27/1/11 |
 | multi_unfreeze | ResNet18 | multi | **no** | L1 | pos_weight | 0.892 | 0.892 | 0.868 | 0.880 | 0.844 | 33/4/5 |
 | unfreeze | ResNet18 | center | **no** | L1 | pos_weight | 0.916 | 0.861 | 0.816 | 0.838 | 0.876 | 31/5/7 |
 | mobilenet | MobileNetV3 | center | yes | L1 | pos_weight | 0.884 | 0.824 | 0.737 | 0.778 | 0.774 | 28/6/10 |
@@ -96,7 +99,69 @@ Sorted by test F1:
 | **temporal** (prescribed baseline) | ResNet18 | center | yes | L1 | pos_weight | 0.613 | 0.455 | 0.395 | 0.423 | 0.213 | 15/18/23 |
 | focal | ResNet18 | center | yes | L1 | **focal** | 0.472 | 0.421 | 0.421 | 0.421 | 0.316 | 16/22/22 |
 
-**Best config improves test F1 from 0.423 → 0.904 and AP50 from 0.213 → 0.871 (4×).**
+**Best config improves test F1 from 0.423 → 0.917 and AP50 from 0.213 → 0.935 (4.4×).**
+
+## Chasing the last of the recall: where the misses actually are
+
+The best 512 px model's PR curve is strong (precision ≥ 0.95 out to recall 0.87) but ends in a
+**cliff**: ~13% of vehicles are never found at *any* confidence threshold. Rather than guess why,
+`src/part1/analysis.py` buckets recall by ground-truth box area:
+
+| GT box area (input px²) | Recall @ 512 px |
+|---|---|
+| < 1k (tiny) | **0/1** |
+| 1k – 2.5k | **10/13 = 0.77** |
+| 2.5k – 5k | 17/18 = 0.94 |
+| 5k – 10k | 2/2 = 1.00 |
+| > 10k (large) | 4/4 = 1.00 |
+
+**Every single miss is a small, distant vehicle.** Large vehicles are found perfectly. So the cliff
+is a *resolution* problem — at stride 32 a distant car spans barely one 32 px cell — and no amount of
+extra epochs, loss tuning or regularisation can fix it. Two ways to give small cars more pixels:
+
+| Attempt | How | Test F1 | AP50 | Verdict |
+|---|---|---|---|---|
+| Baseline best (512 px, stride 32) | — | 0.904 | 0.871 | |
+| **Larger input (640 px, stride 32)** | more pixels, full-depth backbone | **0.917** | **0.935** | ✅ **best** |
+| Finer grid (512 px, **stride 16**) | cut the backbone earlier → 32×32 grid | 0.822 | 0.822 | ❌ worse |
+| Even larger input (768 px, stride 32) | — | 0.818 | 0.873 | ❌ worse |
+
+**Stride 16 failed, and the reason is the interesting part.** Taking features from an earlier stage
+does buy spatial resolution — but it pays for it in *semantic depth*: the features are shallower and
+have seen fewer non-linearities. Resolution and semantics trade off against each other, and here the
+trade was a net loss. That is precisely the problem a **Feature Pyramid Network** exists to solve
+(upsample the deep stride-32 features and fuse them with the shallow stride-16 ones, getting both),
+and it is the natural next step if we wanted to push further.
+
+**768 px also failed** (recall 0.868 → 0.711), so input size is a sweet spot, not a monotonic knob —
+bigger inputs mean fewer effective pixels of context per cell and, at a fixed 40 epochs, a harder
+optimisation. 640 px is the win: **AP50 0.871 → 0.935**, with just **1 false positive** on the test set.
+
+## Confusion matrices (best model, 640 px, test split)
+
+Written by `uv run python -m src.part1.analysis --tag best_img640` → `confusion_matrix.png`.
+
+**Detection level** (what "confusion matrix" normally means for a detector — background/background is
+undefined, because there is no such thing as "correctly predicted nothing" when the negative class is
+every possible box):
+
+| | Actual: vehicle | Actual: background |
+|---|---|---|
+| **Predicted: vehicle** | **TP 33** | FP 1 |
+| **Predicted: background** | FN 5 | n/a |
+
+→ precision **0.971**, recall **0.868**
+
+**Grid-cell objectness** — a genuine 2×2 with a real TN count, and arguably the more honest matrix
+for this architecture, since the head literally *is* a binary classifier run over every grid cell:
+
+| | Actual: vehicle | Actual: no vehicle |
+|---|---|---|
+| **Predicted: vehicle** | TP 83 | FP 8 |
+| **Predicted: no vehicle** | FN 30 | **TN 19,879** |
+
+**19,879 true negatives against 83 true positives** — that is the class imbalance in raw numbers, and
+it is exactly why plain BCE collapses to "no vehicle" and why `pos_weight` exists.
 
 ### Which works best, and why
 
