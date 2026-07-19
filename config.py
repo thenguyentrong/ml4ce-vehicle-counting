@@ -30,9 +30,12 @@ KAGGLE_DATASET = "sshikamaru/car-object-detection"
 # Filled in by src/data.py after the download; see resolve_dataset_paths().
 DATASET_SUBDIR = "data"  # the Kaggle archive nests everything under a "data/" folder
 
-# Part 2: the traffic video. Not yet provided by the course - drop the file here and the
-# Part 2 scripts pick it up (or pass --video explicitly).
+# Part 2: the traffic video. The course did not supply one, so we sourced it ourselves. It is
+# not committed (data/ is gitignored, exactly like the Kaggle images) but is reproducible with
+# `python -m src.part2.video`; provenance and licence are documented in that module.
 VIDEO_PATH = DATA_DIR / "traffic.mp4"
+VIDEO_URL = "https://videos.pexels.com/video-files/4791734/4791734-hd_1920_1080_30fps.mp4"
+VIDEO_SECONDS = 60  # source clip is 64 s; 60 s keeps the manual ground-truth count tractable
 
 # --------------------------------------------------------------------------------------
 # Part 1 - detection head on a frozen backbone
@@ -118,12 +121,46 @@ YOLO_BATCH = 16
 YOLO_DATA_DIR = DATA_DIR / "yolo"  # dataset converted to YOLO format
 YOLO_CONF = 0.25
 
+# COCO class ids that count as a vehicle. The stock yolo11n weights are trained on COCO's 80
+# classes; the task asks for a single `vehicle` class, so these four are merged into one and
+# every other class (person, traffic light, ...) is discarded. The fine-tuned model predicts
+# one class directly and ignores this list.
+COCO_VEHICLE_CLASSES = {2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
+
 # Tracker
+#
+# The two temporal parameters are given in SECONDS, not frames, and converted with the video's
+# own frame rate by `track_frames()` below. This matters because the course tests the submitted
+# model on a separate video we will never see: a threshold of "10 frames" means 0.33 s at 30 fps
+# but 0.17 s at 60 fps, so the same config would silently make the tracker twice as impatient,
+# tear down tracks through short occlusions and fragment them. Nothing would raise an error - the
+# count would just be wrong. Expressed in seconds, the behaviour is the same on any frame rate.
 TRACK_IOU_THRESH = 0.3  # below this, a detection cannot be matched to a track
-TRACK_MAX_AGE = 10  # kill a track after this many consecutive unmatched frames
-TRACK_MIN_HITS = 3  # a track must be confirmed this often before it may be counted
+TRACK_MAX_AGE_SECONDS = 0.33  # drop a track unseen for this long  (10 frames @ 29.97 fps)
+TRACK_MIN_HITS_SECONDS = 0.10  # a track must be seen this long before it may be counted (3 fr)
+TRACK_MATCH = "hungarian"  # "hungarian" | "greedy"  (compared in docs/experiments.md)
+
+
+def track_frames(fps: float) -> tuple[int, int]:
+    """(max_age, min_hits) in frames for a video of `fps`. Both are at least 1 frame."""
+    return (
+        max(1, round(TRACK_MAX_AGE_SECONDS * fps)),
+        max(1, round(TRACK_MIN_HITS_SECONDS * fps)),
+    )
 
 # Counting line, in *normalized* image coordinates (x, y in [0, 1]) so it is resolution
-# independent. Default: a horizontal line across the middle of the frame. Re-tune once the
-# real video is available.
-COUNT_LINE = ((0.0, 0.5), (1.0, 0.5))
+# independent - the same setting is valid on the 1080p and the 4K encode of the clip, and
+# re-encoding cannot silently move the line.
+#
+# Placed by measurement, not by eye — `python -m src.part2.suggest_line` sweeps candidate lines
+# over the tracked paths and scores coverage / direction balance / flow alignment. On this clip
+# the horizontal line at y = 0.65 is crossed by 42 of 93 moving tracks (31/11 per direction).
+# suggest_line's alignment ranking now prefers the vertical x = 0.70 line (41 crossings, but it
+# reads direction from the dominant motion component); we keep the horizontal one because the
+# manual ground truth was counted against it, and both lines agree on the split (31/11 vs 30/11).
+# See docs/experiments.md.
+COUNT_LINE = ((0.0, 0.65), (1.0, 0.65))
+
+# Which sign of the crossing means what. With the line drawn left-to-right, a vehicle moving
+# DOWN the frame (towards the camera) crosses to the positive side; one moving up, away.
+DIRECTION_LABELS = {1: "toward camera", -1: "away from camera"}

@@ -260,3 +260,85 @@ it claims to.
 against the prescribed baseline's 0.455 / 0.395 / 0.423 / 0.213.
 
 ---
+
+## 2026-07-20 — Part 2: the video was the hard part, not the tracker
+
+**The tracker and counter went in cleanly.** IoU association with both greedy and Hungarian
+matching (`--match`), `TRACK_MIN_HITS` before a track may be counted, `TRACK_MAX_AGE` before it is
+terminated, and a counting line tested as a proper segment–segment intersection so a vehicle
+crossing the line's *infinite extension* off to the side is not counted. `tracker.py` and
+`counter.py` import no ultralytics and no OpenCV, which is what let us unit-test all of it on
+synthetic boxes — 28 tests, no video required.
+
+**A bug the tests caught immediately, and would never have been noticed on video.** The first
+synthetic vehicle driven across the line was not counted. Cause: `_side()` returns exactly 0 when
+a box centre lands *on* the line, and the code treated that as a third state ("neither side"). A
+vehicle then steps onto the line in one frame and off it in the next, and no single step ever sees
+two different sides — the crossing vanishes. Box centres are computed from integer pixel
+coordinates and land on round values constantly, so this is not a corner case. Fixed by folding
+zero into the positive side (`>= 0`) so "which side" is a genuine boolean. On the rendered video
+this would have looked like nothing at all: a plausible clip with boxes and IDs and a count that
+was simply too low, with no way to tell.
+
+### Sourcing the video: three wrong answers before a right one
+
+The course did not supply a video, and the search took far longer than writing the tracker. What
+made it hard is that the binding requirement is not the obvious one.
+
+- **Dusk / congested UK dual carriageway** — two directions, static, but 18.7 detections/frame.
+  Rejected on *hand-countability*: the ground truth has to be produced by a human once, and 200+
+  mutually-occluding vehicles cannot be counted reliably. We checked whether dusk itself broke
+  detection before rejecting it — it does not, mean confidence 0.551 at dusk vs 0.542–0.593 in
+  daylight. **Density was the problem, not light.**
+- **US freeway** — same density problem, plus the Pixabay licence forbids redistributing content
+  "on a standalone basis", which rules it out of a public repo.
+- **Daylight two-lane, 7.4 det/frame** — perfect on every axis except that all traffic flows one
+  way, so "count per direction" is meaningless.
+
+**The mistake worth recording.** We then picked a T-junction clip and were confident: static
+camera (verified with a difference image), daylight, both directions visible in the same frame,
+9.2 det/frame. Every stated requirement, verified by eye. It was still wrong. Running the tracker
+over it and sweeping candidate counting lines showed the best line anywhere in the frame is crossed
+by **15 of 34 moving tracks, 14 of them in the same direction** — the traffic *disperses* at the
+junction instead of passing through any single cross-section.
+
+The requirement was never "both directions are visible". It is "**there exists one line that both
+flows cross**", and that is not visible in a still image, only in the trajectories. The chosen
+intersection clip scores 42 of 93 crossings split 31/11 on the same test. Lesson, and it is the
+same one as the 640 px episode in Part 1: *we verified the property we could see instead of the
+property that mattered.*
+
+The counting line's position (y = 0.65) came out of that same sweep rather than being placed by
+eye — the first line we drew by hand was on the wrong axis entirely, because the road's dominant
+flow direction is not what the still image suggests.
+
+### Two results that came out opposite to our prediction
+
+**Fine-tuning helped, and we expected it to hurt.** The argument for it hurting was good: Part 1's
+data is dashcam footage (rear views, road level), the video is an elevated static street camera
+(head-on), and fine-tuning on 355 dashcam frames should specialise the model *away* from the target
+domain. Measured: fine-tuned counts 47 vehicles, off-the-shelf COCO counts 29, and the fine-tuned
+model creates ~200 fewer tracks. The mechanism is visible in the numbers — the off-the-shelf model
+emits nearly **twice** as many detections per frame (10.16 vs 5.64) while counting *fewer*
+vehicles. It spends them on parked cars, pedestrians and distant traffic that never cross the line,
+and its boxes are less stable, so tracks fragment (21.0 tracks per counted vehicle vs 8.7) and the
+fragments fail to reach `TRACK_MIN_HITS` at the moment they cross.
+
+**Hungarian vs greedy is a tie on this footage: 47 vs 47, 29 vs 29.** The only difference is a
+handful of tracks (408 vs 412) — a few ID switches avoided. This is worth saying plainly rather
+than dressing up: optimal assignment only pays when a track has several plausible detections
+competing for it, and at 6–10 well-separated vehicles per frame that ambiguity is rare. The unit
+test builds the case where greedy provably loses a track and invents a phantom ID; this video just
+does not generate it often. On the congested clip we rejected, it would — which is a better
+argument for Hungarian than any number we can produce here.
+
+### Still open
+
+The **manual count is not done**, and it is the only external ground truth this project has. Until
+it exists, `evaluate.py` deliberately refuses to print an accuracy: substituting one of the runs as
+"truth" would make the evaluation circular. `runs/part2/manual/reference.mp4` (the clip with only
+the counting line burned in, plus a frame index) is rendered and ready, and the counting rules are
+fixed in advance in `docs/manual_count.md` so that the human and the machine answer the *same*
+question — crossing, not presence.
+
+---

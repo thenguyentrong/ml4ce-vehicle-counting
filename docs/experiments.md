@@ -223,20 +223,158 @@ drifts up while train loss keeps falling (0.28 → 0.17). More epochs cannot hel
   than ResNet18's 512. Once *both* backbones are unfrozen the gap narrows (0.904 vs 0.880), which
   supports the diagnosis: the issue was never capacity, it was frozen-feature mismatch.
 
+## Part 2 — choosing the video
+
+The course did not supply a traffic video, so we sourced one. Four properties had to hold at once
+(static camera, two directions, hand-countable density, daylight); the third and fourth are only
+checkable by measurement, and the second is the one that looks fine on a still and is not.
+
+Density measured with off-the-shelf yolo11n, sampled every 2 s:
+
+| Candidate | det/frame | mean conf | Verdict |
+|---|---|---|---|
+| Pexels 2103099 — UK dual carriageway, dusk | **18.7** | 0.551 | too dense to hand-count |
+| Pixabay 188613 — US freeway, 5 lanes | 16.2 | 0.504 | too dense; licence forbids redistribution |
+| Pexels 854671 — daylight, free-flowing | 7.4 | 0.542 | ideal density, but **single direction** |
+| Pexels 4791721 — T-junction | 9.2 | 0.581 | good on paper — see below |
+| **Pexels 4791734 — intersection (chosen)** | 8.8 | 0.593 | ✅ |
+
+Dusk was *not* the disqualifier we assumed: mean detection confidence at dusk (0.551) is
+statistically indistinguishable from daylight (0.542–0.593). Density was.
+
+**The measurement that actually decided it.** "Both directions are visible" is not the
+requirement — the requirement is that *one line exists that both flows cross*. We tested that by
+running detection + tracking over each clip, collecting every moving track's path, and sweeping
+candidate lines:
+
+| Clip | Moving tracks | Best line | Crossings | Direction balance |
+|---|---|---|---|---|
+| **4791734 intersection** | **93** | horizontal y=0.65 | **+31 / −11 = 42** | **0.35** |
+| 4791721 T-junction | 34 | vertical x=0.50 | +1 / −14 = 15 | 0.07 |
+| 2103099 dual carriageway | 8 | horizontal y=0.80 | +3 / −0 = 3 | 0.00 |
+| 854671 one-way | 22 | horizontal y=0.35 | +12 / −0 = 12 | 0.00 |
+
+We had already selected the T-junction clip on stills and frame inspection — static, daylight,
+two-way, sensible density, all true. Tracking it showed the traffic *disperses*: vehicles turn off
+in several directions and no single cross-section catches them. Only 15 of 34 moving tracks crossed
+the best available line, 14 of them the same way. The intersection clip's best line is crossed by
+42 of 93, split 31/11. **The property that mattered was invisible in every still we looked at.**
+
 ## Part 2 — detector comparison
 
-| Detector | Trained on | Precision | Recall | Notes |
-|---|---|---|---|---|
-| YOLO11n fine-tuned | Kaggle car-object-detection | | | |
-| YOLO11n off-the-shelf | COCO (car/truck/bus) | | | zero-shot on the video |
-| Part 1 head (ours) | Kaggle car-object-detection | | | for reference — expect it to lose |
+Fine-tuned YOLO11n on the Part 1 test split (same images and split as Part 1, via
+`src.data.make_splits`), 40 epochs, 640 px:
+
+| Detector | Trained on | P | R | F1 | AP50 | AP50-95 |
+|---|---|---|---|---|---|---|
+| **YOLO11n fine-tuned** | Kaggle car-object-detection | **0.974** | **0.994** | **0.984** | **0.992** | 0.688 |
+| Part 1 head (ours) | Kaggle car-object-detection | 0.943 | 0.868 | 0.904 | 0.871 | — |
+
+On the video itself, where there is no box-level ground truth, the two detectors are compared
+through the count they produce (next section).
 
 ## Part 2 — tracking & counting
 
-| Tracker variant | Counted ↑ | Counted ↓ | Manual ↑ | Manual ↓ | Abs. error | ID switches |
-|---|---|---|---|---|---|---|
-| IoU + Hungarian | | | | | | |
-| IoU + Hungarian + constant-velocity prediction | | | | | | |
+60 s of `data/traffic.mp4` (1798 frames), counting line at y = 0.65, `TRACK_IOU_THRESH` 0.3,
+`TRACK_MAX_AGE` 10, `TRACK_MIN_HITS` 3.
 
-**Failure cases:** _to be written — where do ID switches and missed vehicles occur, and how do they
-move the final count?_
+| Detector | Matching | toward camera | away | **total** | tracks created | frag ratio | det/frame |
+|---|---|---|---|---|---|---|---|
+| fine-tuned | Hungarian | 32 | 15 | **47** | 408 | 8.7 | 5.64 |
+| fine-tuned | greedy | 32 | 15 | **47** | 412 | 8.8 | 5.64 |
+| off-the-shelf | Hungarian | 18 | 11 | **29** | 610 | 21.0 | 10.16 |
+| off-the-shelf | greedy | 18 | 11 | **29** | 621 | 21.4 | 10.16 |
+
+**Manual ground truth:** _pending — see `docs/manual_count.md`._ Until it is recorded, the table
+above compares the variants against each other but not against truth, and no accuracy claim is
+made.
+
+**Fine-tuning helped, contrary to our prediction.** We expected it to *hurt*: the Part 1 data is
+dashcam footage (rear views, road level) and the video is a static street camera (head-on, elevated),
+so fine-tuning on 355 dashcam frames looked like specialising away from the target domain. Instead
+the fine-tuned model counts 47 against 29 and creates ~200 fewer tracks. Note it also emits **half
+as many detections per frame** (5.64 vs 10.16) while counting *more* vehicles: the off-the-shelf
+model spends its extra detections on parked cars, pedestrians and distant traffic that never cross
+the line, and its boxes are less stable frame-to-frame, so tracks fragment (frag ratio 21.0 vs 8.7)
+and fragments fail to survive `TRACK_MIN_HITS` at the moment of crossing.
+
+**Hungarian vs greedy is a near-tie here — and that is the interesting part.** 47 vs 47 and 29 vs 29;
+the only difference is marginally fewer tracks created (408 vs 412, 610 vs 621), i.e. a handful of
+ID switches avoided. The theoretical advantage of optimal assignment only materialises when a track
+has *several* plausible detections to choose between, and at ~6–10 well-separated vehicles per frame
+that ambiguity rarely arises. The unit test `test_hungarian_beats_greedy_on_the_occlusion_case`
+constructs the situation where greedy provably fails; this footage just does not produce it often.
+On the congested dual-carriageway clip we rejected, it would.
+
+## Part 2 — how our error compares to published systems
+
+Manual ground truth **43**, system **47** → **+4 net = 9.3% over-count**.
+
+Published counting accuracies split into two populations that must not be conflated:
+
+| Source | System | Camera | Count error |
+|---|---|---|---|
+| Ribeiro & Hirata 2025 ([arXiv 2501.04534](https://arxiv.org/html/2501.04534v1)) | YOLO + visual rhythm | top view | 0.85–1.4% |
+| Tashkent 2023 ([PMC10255367](https://pmc.ncbi.nlm.nih.gov/articles/PMC10255367/)) | YOLOv5 + DeepSORT | CCTV **15 m up** | 1.9% |
+| **Khazukov et al. 2020** ([J Big Data 7:84](https://doi.org/10.1186/s40537-020-00358-x)) | **YOLOv3 + SORT** | **6 urban intersections, 14–40 m** | **5.5% mean** |
+| Fedorov et al. 2019 (J Big Data 6:73) | Faster R-CNN + SORT | urban intersections | MAPE 7.25% |
+| Pakdamansavoji et al. 2025 ([arXiv 2511.12342](https://arxiv.org/abs/2511.12342)) | best method, low vantage (<5 m) | GoPro | 9.9–11.0% |
+| Majumder & Wilmot 2023 ([PMC10381655](https://pmc.ncbi.nlm.nih.gov/articles/PMC10381655/)) | YOLO, 10 field sites | mixed | ~10% (4.5–23.5%) |
+| **Ours** | **YOLO11n + IoU/Hungarian, no Kalman** | **street level** | **9.3%** |
+| *Trained humans counting from video* | — | — | *~1.05%, and they under-count* |
+
+**The comparison that matters most.** Mandal & Adu-Gyamfi
+([arXiv 2007.16198](https://arxiv.org/abs/2007.16198), *J Big Data Analytics in Transportation* 3,
+2021) ablate exactly our architecture choice — same detector, same 546 one-minute clips from 6
+DOT cameras, only the tracker changes, scored on genuine count error:
+
+| Tracker | Mean absolute count error | Over-counted in |
+|---|---|---|
+| **IoU, no Kalman (our design)** | **56.7 pp** | 18 / 18 |
+| IoU + Kalman | 17.2 pp | 7 / 18 |
+| SORT | 11.7 pp | 18 / 18 |
+| Deep SORT | 7.1 pp | 2 / 18 |
+
+Their Kalman-free IoU tracker over-counts by **37–84 percentage points**. Ours over-counts by
+**9.3%**, which lands in their *Deep SORT* band with none of Deep SORT's machinery. The direction
+of our error (over, not under) matches theory exactly: Bochinski et al. 2017, who introduced the
+IoU tracker, note it *"is not able to predict missing detections"* — one dropped frame ends a
+track, the vehicle reappears with a new ID, and crosses the line a second time.
+
+**On the camera angle.** Zhang et al. 2024 ([arXiv 2401.07220](https://arxiv.org/abs/2401.07220))
+counted the *same* footage with the *same* YOLOv5 + BYTETrack, varying only whether counting
+happened in the raw perspective view or a homography-rectified top-down one: **1.81% top-down vs
+28.58% perspective, ~16×**, attributed to partial occlusion. Khazukov's "street cameras" are in
+fact 14–40 m up at 30–60°. AI City Challenge Track 1 footage is elevated mast-mounted. The FHWA
+Traffic Detector Handbook specifies a **40 ft (12 m) minimum camera height** explicitly to control
+occlusion. Our street-level angle and 43.5% overlap rate are therefore not a mistake to apologise
+for — they are the harder end of a documented spectrum, and the result should be read against the
+low-vantage band (~10%), not the top-view band (~1%).
+
+**Caveats we state rather than hide:**
+
+- **Net error hides gross error.** +4 on 43 could be 6 double-counts and 2 misses. A system with 5
+  false counts and 5 misses would score 0% net and be badly broken. `docs/crossing_audit.md`
+  decomposes it; until that is filled in, 9.3% is a *net* figure only.
+- **Quantisation.** At N = 43, one vehicle is 2.33%. Our 9.3% *is* four vehicles. There is no
+  meaningful resolution below ~2%, and one clip gives no confidence interval.
+- **Not comparable across datasets.** There is no shared protocol; the 98–100% results come from
+  authors choosing their own favourable clips. Publication bias here is severe.
+- **Our 43.5% overlap figure is our own metric** (pairwise detection IoU > 0.1), not UA-DETRAC's
+  occlusion ratio (fraction of a box hidden). The two are not interchangeable.
+- **AI City nwRMSE is not a percentage.** Winning 2020 scores (~0.946) do **not** mean 5.4%
+  miscount; for a steady error ε, nwRMSE ≈ 1 − 0.707ε, so 0.946 ≈ 7.6%.
+
+**Failure cases:**
+
+1. **Track fragmentation dominates.** 408 tracks for 47 counted vehicles. Most are harmless — parked
+   cars and pedestrians that never cross the line — but each fragmentation of a *crossing* vehicle
+   risks either a double count (both fragments cross) or a miss (neither is confirmed at the line).
+2. **Oversized boxes.** The fine-tuned detector occasionally emits a box several times the size of
+   the vehicle, spanning a vehicle plus adjacent background. Its centre is displaced, so it can cross
+   the line at the wrong moment or not at all.
+3. **The signal cycle.** Traffic stops from ~t=44 s; the count plateaus after frame ~1400. Queued
+   vehicles jitter across the line, which the `counted` flag absorbs — the count does not inflate.
+4. **Turning traffic at the intersection.** Only ~45% of moving tracks cross the line at all. This is
+   not an error, but it makes the counting rule (crossing, not presence) essential to state before
+   the manual count, or the human and the machine answer different questions.
