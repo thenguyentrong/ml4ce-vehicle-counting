@@ -12,6 +12,9 @@ data/
 # Training artifacts: checkpoints, figures, rendered videos
 runs/
 
+# The packed hand-in built by make_submission.py
+submission/
+
 # Model weights and media are too large for git
 *.pt
 *.pth

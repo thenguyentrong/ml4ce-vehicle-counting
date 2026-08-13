@@ -342,3 +342,45 @@ fixed in advance in `docs/manual_count.md` so that the human and the machine ans
 question — crossing, not presence.
 
 ---
+
+## 2026-08-14 — Submission-readiness pass
+
+Ten days before the deadline we stopped adding results and tested the part that gets graded after
+submission: someone else running this on data we never saw. 33/33 tests pass and
+`src.part1.evaluate` reproduces P 0.943 / R 0.868 / F1 0.904 / AP50 0.871, so the README table is
+not stale. Three real problems came out.
+
+**1. Part 1 could not run on anyone else's images.** `evaluate.py` goes through `build_loaders()`,
+which needs the Kaggle CSV and our own split, so it can only score our 50 test frames. Added
+`src.part1.predict`: folder in, `predictions.csv` in original-image pixels out, plus annotated
+images and metrics if a ground truth CSV is given. It picks the checkpoint with the best measured
+test F1 instead of a hard-coded name, and takes the threshold and NMS IoU from that run's
+`metrics.json`.
+
+While writing it: the first version decoded at the tuned threshold and got AP50 0.846 where
+`evaluate.py` says 0.871, with identical P/R/F1. AP integrates the whole PR curve, so dropping the
+low-confidence boxes first cuts the tail off and understates it. Fix: decode at threshold 0,
+threshold afterwards for the reported boxes. Both paths agree to the digit now.
+
+**2. `run_count` would have counted only the first 60 s of any video, silently.**
+`config.VIDEO_SECONDS = 60` was the argparse default; it exists to trim *our* 64 s clip to the
+window the manual count covers. On a three-minute video from the course it would have read one
+minute and printed a confident number, and the missing vehicles would look like a tracker problem.
+Now `config.frames_to_process()` trims only our own clip or when `--seconds` is given, says how
+much it reads, and stores `frames_available` next to `frames`. Same class of bug as frames vs
+seconds in the tracker: a default that is right for one video and wrong everywhere else.
+
+**3. The default detector was the un-fine-tuned one.** `--weights` defaulted to `stock`, so a run
+without flags used the COCO model that counts 29 instead of 47. `run_count` and `suggest_line` now
+default to the fine-tuned weights when they exist, print which file they loaded, and fall back to
+stock otherwise.
+
+**Checked end to end.** Built the zip, extracted it somewhere else, ran it like a grader would:
+tests pass, `predict` reproduces 0.943 / 0.868 / 0.904 / 0.871 from the shipped checkpoint, and
+`run_count` counts from the shipped weights and video with no path fixes. On a clip re-encoded to
+1280×720 at 25 fps, `suggest_line` proposed a vertical line, `run_count` counted 6 of 11 moving
+vehicles, and the tracker thresholds became 8 and 2 frames instead of 10 and 3 — which is exactly
+why they are written in seconds. The 60 s clip still gives 32/15/47 with 408 tracks.
+
+Also: the README listed three notebooks in `notebooks/` that do not exist. `yolo26n.pt` in the
+root is a stray download, nothing uses it, it is not in the bundle.

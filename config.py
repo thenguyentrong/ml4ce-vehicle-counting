@@ -121,6 +121,9 @@ YOLO_BATCH = 16
 YOLO_DATA_DIR = DATA_DIR / "yolo"  # dataset converted to YOLO format
 YOLO_CONF = 0.25
 
+# Where finetune.py writes the detector we submit.
+YOLO_WEIGHTS = RUNS_DIR / "yolo" / "finetune" / "weights" / "best.pt"
+
 # COCO class ids that count as a vehicle. The stock yolo11n weights are trained on COCO's 80
 # classes; the task asks for a single `vehicle` class, so these four are merged into one and
 # every other class (person, traffic light, ...) is discarded. The fine-tuned model predicts
@@ -147,6 +150,32 @@ def track_frames(fps: float) -> tuple[int, int]:
         max(1, round(TRACK_MAX_AGE_SECONDS * fps)),
         max(1, round(TRACK_MIN_HITS_SECONDS * fps)),
     )
+
+
+def default_weights() -> str:
+    """The fine-tuned detector if it shipped, else the off-the-shelf one.
+
+    `--weights stock` stays available for the comparison runs in docs/experiments.md, but a plain
+    `run_count` on a new video should use the submitted detector, not the un-fine-tuned baseline.
+    """
+    return str(YOLO_WEIGHTS) if YOLO_WEIGHTS.exists() else "stock"
+
+
+def frames_to_process(
+    video_path: Path, fps: float, total_frames: int, seconds: float | None = None
+) -> int:
+    """How many frames of `video_path` to read.
+
+    VIDEO_SECONDS trims the project clip to the 60 s the manual count covers, so both counts
+    answer the same question. It must not silently trim a video the course hands over later: a
+    three-minute clip would be read for one minute, and the missing vehicles would look like a
+    tracker failure. So it applies only to the project video, or when `--seconds` is given.
+    """
+    if seconds is None:
+        seconds = VIDEO_SECONDS if Path(video_path).resolve() == VIDEO_PATH.resolve() else None
+    if seconds is None:
+        return total_frames
+    return min(total_frames, int(seconds * fps))
 
 # Counting line, in *normalized* image coordinates (x, y in [0, 1]) so it is resolution
 # independent - the same setting is valid on the 1080p and the 4K encode of the clip, and

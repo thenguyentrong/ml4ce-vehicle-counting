@@ -47,7 +47,9 @@ MIN_TRAVEL_PX = 80
 MIN_PATH_POINTS = 5
 
 
-def collect_paths(video: Path, weights: str, seconds: float, conf: float) -> tuple[dict, int, int]:
+def collect_paths(
+    video: Path, weights: str, seconds: float | None, conf: float
+) -> tuple[dict, int, int]:
     """Track the video and return {track_id: [centers]} plus the frame size."""
     from ultralytics import YOLO
 
@@ -58,7 +60,11 @@ def collect_paths(video: Path, weights: str, seconds: float, conf: float) -> tup
     fps = cap.get(cv2.CAP_PROP_FPS)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    n_frames = min(int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), int(seconds * fps))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    n_frames = config.frames_to_process(video, fps, total_frames, seconds)
+    if n_frames < total_frames:
+        print(f"[suggest_line] measuring on the first {n_frames / fps:.0f} s "
+              f"({n_frames} of {total_frames} frames)")
 
     tracker = IoUTracker(match=config.TRACK_MATCH, fps=fps)
     paths: dict[int, list[tuple[float, float]]] = {}
@@ -220,16 +226,22 @@ def suggest(moving: dict, width: int, height: int, top: int = 5,
 def main() -> None:
     p = argparse.ArgumentParser(description="Propose a counting line for an unseen video")
     p.add_argument("--video", type=Path, default=config.VIDEO_PATH)
-    p.add_argument("--weights", default="stock",
-                   help="fine-tuned weights path, or 'stock' for un-fine-tuned yolo11n")
-    p.add_argument("--seconds", type=float, default=config.VIDEO_SECONDS)
+    p.add_argument("--weights", default=None,
+                   help="fine-tuned weights path, or 'stock' for un-fine-tuned yolo11n; "
+                        "default: the fine-tuned weights if present, else 'stock'")
+    p.add_argument("--seconds", type=float, default=None,
+                   help="measure on the first N seconds only; defaults to the whole video")
     p.add_argument("--conf", type=float, default=config.YOLO_CONF)
     args = p.parse_args()
 
     if not args.video.exists():
         raise SystemExit(f"{args.video} not found")
 
-    paths, width, height = collect_paths(args.video, args.weights, args.seconds, args.conf)
+    weights = args.weights or config.default_weights()
+    if args.weights is None:
+        print(f"[suggest_line] no --weights given; using {weights}")
+
+    paths, width, height = collect_paths(args.video, weights, args.seconds, args.conf)
     moving = moving_only(paths)
     print(f"[suggest_line] {args.video.name}: {len(paths)} tracks, {len(moving)} of them moving\n")
     if not moving:

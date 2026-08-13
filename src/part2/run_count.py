@@ -99,7 +99,7 @@ def run(
     tag: str,
     match: str = config.TRACK_MATCH,
     conf: float = config.YOLO_CONF,
-    seconds: float = config.VIDEO_SECONDS,
+    seconds: float | None = None,
     video_path: Path | None = None,
     line: tuple | None = None,
     save_video: bool = True,
@@ -118,7 +118,11 @@ def run(
     fps = cap.get(cv2.CAP_PROP_FPS)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    n_frames = min(int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), int(seconds * fps))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    n_frames = config.frames_to_process(video_path, fps, total_frames, seconds)
+    if n_frames < total_frames:
+        print(f"[run_count] reading the first {n_frames / fps:.0f} s ({n_frames} of "
+              f"{total_frames} frames); vehicles crossing later are NOT counted")
 
     # The tracker's temporal thresholds come from config in SECONDS and are scaled by this
     # video's own frame rate, so the same settings behave identically on unseen footage shot at
@@ -168,6 +172,7 @@ def run(
         "max_age_frames": tracker.max_age,
         "min_hits_frames": tracker.min_hits,
         "frames": n_frames,
+        "frames_available": total_frames,
         "detections_total": n_detections,
         "detections_per_frame": round(n_detections / max(1, n_frames), 2),
         "tracks_created": tracker._next_id - 1,
@@ -188,12 +193,16 @@ def run(
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Detect, track and count vehicles in the video")
-    p.add_argument("--weights", default="stock",
-                   help="path to fine-tuned weights, or 'stock' for un-fine-tuned yolo11n")
+    p.add_argument("--weights", default=None,
+                   help="path to fine-tuned weights, or 'stock' for un-fine-tuned yolo11n; "
+                        "default: the fine-tuned weights if present, else 'stock'")
     p.add_argument("--tag", default=None, help="run name -> runs/part2/<tag>/")
     p.add_argument("--match", default=config.TRACK_MATCH, choices=["hungarian", "greedy"])
     p.add_argument("--conf", type=float, default=config.YOLO_CONF)
-    p.add_argument("--seconds", type=float, default=config.VIDEO_SECONDS)
+    p.add_argument("--seconds", type=float, default=None,
+                   help=f"process only the first N seconds; defaults to the whole video, except "
+                        f"for our own clip, which is trimmed to {config.VIDEO_SECONDS} s to match "
+                        f"the manual count")
     p.add_argument("--video", type=Path, default=None, help="run on a different video")
     p.add_argument(
         "--line", default=None, metavar="X1,Y1,X2,Y2",
@@ -211,9 +220,13 @@ def main() -> None:
             raise SystemExit(f"--line must be four comma-separated numbers, got {args.line!r}")
         line = ((x1, y1), (x2, y2))
 
-    tag = args.tag or f"{'stock' if args.weights == 'stock' else 'finetune'}_{args.match}"
+    weights = args.weights or config.default_weights()
+    if args.weights is None:
+        print(f"[run_count] no --weights given; using {weights}")
+
+    tag = args.tag or f"{'stock' if weights == 'stock' else 'finetune'}_{args.match}"
     run(
-        weights=args.weights,
+        weights=weights,
         tag=tag,
         match=args.match,
         conf=args.conf,
