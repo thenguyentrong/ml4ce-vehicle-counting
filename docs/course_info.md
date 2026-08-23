@@ -24,22 +24,16 @@ RWTH Aachen University).
 - Provide a **gigamove link**: <https://gigamove.rwth-aachen.de/en>
 - Make sure *all* relevant documents are included.
 
-## The Part 2 video: what is allowed
+## The Part 2 video
 
-Posted by the teaching team. It is why our two videos are different:
+From the teaching team:
 
-> You are free to select any video that is recorded with a static camera. For example, the video
-> below can be used, or if you want, you can use other videos you can find publicly available on
-> the web. This is a sample video that you can use. 1 minute length of such video can be used for
-> evaluation.
+> You are free to select any video that is recorded with a static camera. [...] 1 minute length of
+> such video can be used for evaluation.
 > — <https://www.youtube.com/watch?v=wqctLW0Hb_0&list=PLJKyZ_NuOhJQzif2-6-Kq9OiOj_UjJWvi&index=1>
 
-So any public static-camera clip counts. `data/traffic.mp4` is Pexels 4791734, which we picked
-ourselves; it did not have to be the sample. And 60 s is enough, which is the length of our clip
-and of the manual count of 43.
-
-Ali used the sample video instead, a 2-minute section of it. Ours is street level, his is the
-motorway from a bridge, so the two counts are not comparable. See `NOTES.md`.
+So: own clip allowed, 60 s enough. Ours is Pexels 4791734 (street level, 60 s, manual count 43).
+Ali used 2 min of the sample video (motorway) — different footage, counts not comparable.
 
 ## Supervision
 
@@ -51,10 +45,8 @@ motorway from a bridge, so the two counts are not comparable. See `NOTES.md`.
 1. **Documented code**
    - Explain what functions do.
    - **Comment who took part in each code snippet** — who did what.
-   - How we do it: an `Author:` tag at the top of every module, and a per-function tag where
-     someone else wrote part of it. `src/`, `tests/` and `docs/` are Vinh's. `ali_contribution/`
-     is Ali's, kept as its own folder rather than merged in so the tags stay true. Listed in the
-     README under Attribution.
+   - Done via `Author:` tags per module. `src/`, `tests/`, `docs/` are Vinh's;
+     `ali_contribution/` is Ali's. See Attribution in the README.
 2. **Presentation**
    - Explain **what we tried and what did and did not work**.
    - **Compare methods**, evaluate and explain **which method works best and why**.
