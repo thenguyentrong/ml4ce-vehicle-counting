@@ -27,3 +27,6 @@ submission/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Slides: they ship in the submission zip, not in the repo
+presentation/
