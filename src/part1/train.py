@@ -21,10 +21,9 @@ import time
 from pathlib import Path
 
 import torch
-from torch.utils.data import DataLoader
 
 import config
-from src.part1.dataset import build_loaders, collate
+from src.part1.dataset import build_loaders
 from src.part1.losses import DetectionLoss
 from src.part1.model import VehicleDetector
 

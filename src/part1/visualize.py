@@ -21,7 +21,6 @@ import torch
 from PIL import Image, ImageDraw
 
 import config
-from src import data as data_mod
 from src.part1.dataset import IMAGENET_MEAN, IMAGENET_STD, build_loaders
 from src.part1.evaluate import match, resolve_run
 from src.part1.infer import decode_predictions

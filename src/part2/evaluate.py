@@ -40,7 +40,7 @@ def _cell(text: str, label: str) -> int | None:
     fills the table in should not have to strip formatting for the parser's benefit.
     """
     m = re.search(rf"^\|\s*\**{re.escape(label)}\**\s*\|[\s`*]*(\d+)[\s`*]*\|",
-                  text, re.MULTILINE)
+                  text, re.MULTILINE | re.IGNORECASE)
     return int(m.group(1)) if m else None
 
 
@@ -84,6 +84,13 @@ def load_runs(runs_dir: Path | None = None) -> list[dict]:
     return summaries
 
 
+def video_of(run: dict) -> str:
+    """Which clip a run used. A run made before --video existed stores None, which meant
+    the project clip - the only video there was.
+    """
+    return run.get("video") or config.VIDEO_PATH.name
+
+
 def main() -> None:
     runs = load_runs()
     if not runs:
@@ -100,7 +107,7 @@ def main() -> None:
     print(header)
     for r in runs:
         weights = "stock" if r["weights"] == "stock" else "fine-tuned"
-        row = f"{r['tag']:26s} {weights:9s} {r['match']:10s}{r.get('video') or config.VIDEO_PATH.name:18s}"
+        row = f"{r['tag']:26s} {weights:9s} {r['match']:10s}{video_of(r):18s}"
         row += "".join(f"{r['counts'][l]:>18d}" for l in labels)
         row += f"{r['counts']['total']:>7d}"
         print(row)
@@ -113,22 +120,21 @@ def main() -> None:
     # question and must not be differenced against it - that produced a nonsense "+132"
     # row the first time a run on the course sample video landed in runs/part2/.
     truth_video = config.VIDEO_PATH.name
-    # A run made before --video existed stores None, meaning it used the project clip.
-    same = lambda r: (r.get("video") or truth_video) == truth_video
-    runs, other = [r for r in runs if same(r)], [r for r in runs if not same(r)]
+    comparable = [r for r in runs if video_of(r) == truth_video]
+    other = [r for r in runs if video_of(r) != truth_video]
     if other:
-        names = ", ".join(sorted({r.get("video", "?") for r in other}))
+        names = ", ".join(sorted({video_of(r) for r in other}))
         print(f"({len(other)} run(s) on other footage not compared here: {names})")
     if manual is None:
         print("Manual count not recorded yet.")
-        print(f"  1. python -m src.part2.manual_count   -> runs/part2/manual/reference.mp4")
-        print(f"  2. watch it and tally each direction (rules in docs/manual_count.md)")
-        print(f"  3. replace the TODOs in docs/manual_count.md and re-run this script")
+        print("  1. python -m src.part2.manual_count   -> runs/part2/manual/reference.mp4")
+        print("  2. watch it and tally each direction (rules in docs/manual_count.md)")
+        print("  3. replace the TODOs in docs/manual_count.md and re-run this script")
     else:
         print(f"{'run':26s}" + "".join(f"{l:>18s}" for l in labels) + f"{'total':>7s}{'abs err':>9s}")
         print(f"{'MANUAL (ground truth)':26s}" + "".join(f"{manual[l]:>18d}" for l in labels)
               + f"{manual['total']:>7d}{'-':>9s}")
-        for r in runs:
+        for r in comparable:
             err = r["counts"]["total"] - manual["total"]
             row = f"{r['tag']:26s}"
             row += "".join(f"{r['counts'][l] - manual[l]:>+18d}" for l in labels)
