@@ -26,13 +26,13 @@ the settings that made it.
 
 | Setting | Transfers? | Why |
 |---|---|---|
-| `COUNT_LINE` | ❌ **no** | Depends on where the road is. Re-place it per video, that is what `suggest_line` is for. |
-| `DIRECTION_LABELS` | ❌ no | "toward camera" only means something for one geometry. Rename it for the new scene. |
-| `TRACK_MAX_AGE_SECONDS`, `TRACK_MIN_HITS_SECONDS` | ✅ yes | In **seconds**, scaled by the video's own fps, so they mean the same duration at 25, 30 or 60 fps. |
-| `TRACK_IOU_THRESH` | ✅ yes | Dimensionless overlap, independent of resolution and scale. |
-| `COUNT_LINE` coordinates | ✅ yes | Stored normalised to [0, 1], so 1080p and 4K encodes behave the same. |
-| `YOLO_CONF` | ✅ mostly | May need raising on cluttered footage; it is a flag (`--conf`). |
-| Fine-tuned weights | ⚠️ **uncertain** | See below. |
+| `COUNT_LINE` | **no** | Depends on where the road is. Re-place it per video, that is what `suggest_line` is for. |
+| `DIRECTION_LABELS` | no | "toward camera" only means something for one geometry. Rename it for the new scene. |
+| `TRACK_MAX_AGE_SECONDS`, `TRACK_MIN_HITS_SECONDS` | yes | In **seconds**, scaled by the video's own fps, so they mean the same duration at 25, 30 or 60 fps. |
+| `TRACK_IOU_THRESH` | yes | Dimensionless overlap, independent of resolution and scale. |
+| `COUNT_LINE` coordinates | yes | Stored normalised to [0, 1], so 1080p and 4K encodes behave the same. |
+| `YOLO_CONF` | mostly | May need raising on cluttered footage; it is a flag (`--conf`). |
+| Fine-tuned weights | **uncertain** | See below. |
 
 ## The one thing to watch: which weights
 

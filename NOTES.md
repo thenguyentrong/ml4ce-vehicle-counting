@@ -147,7 +147,7 @@ can compensate for features that were never tuned for that. The clincher is the 
 *frozen*, it scores 0.778 against ResNet18's 0.423, but once both are unfrozen the gap collapses to
 0.904 vs 0.880. The problem was never capacity; it was frozen-feature mismatch.
 
-⚠️ **This deviates from the task sheet**, which says "you don't need to train the backbone, only train
+**This deviates from the task sheet**, which says "you don't need to train the backbone, only train
 your detection head". That is permission, not prohibition — but we therefore report **both**: the
 prescribed frozen detector *and* the fine-tuned one, with the gap as the finding. Worth confirming
 with the supervisor that the deviation is acceptable, since it is our strongest result.

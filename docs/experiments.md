@@ -66,7 +66,7 @@ Frozen ResNet18, L1 box loss, pos_weight=20, augmentation on, λ_obj:λ_box = 1:
 | Validation (150 images) | 0.679 | 0.559 | 0.613 | — |
 | **Test (50 images)** | **0.455** | **0.395** | **0.423** | 0.213 |
 
-> ⚠️ **The test split is too small to trust on its own.** 5% of 1001 images = 50 images holding only
+> **The test split is too small to trust on its own.** 5% of 1001 images = 50 images holding only
 > **38 boxes**. A single bad frame moves F1 by several points, which is why test (0.42) and val
 > (0.61) diverge so much. The 80/15/5 ratio comes from the task sheet, so we keep it — but we report
 > **validation** as the primary number and treat test as a spot check. Worth raising with the
@@ -125,10 +125,10 @@ negative results rather than deleting the evidence:
 
 | Attempt | Test F1 | AP50 | TP/FP/FN | Verdict |
 |---|---|---|---|---|
-| **Task-specified 512 px, stride 32** | **0.904** | 0.871 | 33/2/5 | ✅ kept |
-| Finer grid: stride 16 (32×32 cells) | 0.822 | 0.822 | 30/5/8 | ❌ worse |
-| Larger input: 640 px | 0.917 | 0.935 | **33**/1/**5** | ⚠️ see below |
-| Larger input: 768 px | 0.889 | 0.911 | 32/2/6 | ❌ worse |
+| **Task-specified 512 px, stride 32** | **0.904** | 0.871 | 33/2/5 | kept |
+| Finer grid: stride 16 (32×32 cells) | 0.822 | 0.822 | 30/5/8 | worse |
+| Larger input: 640 px | 0.917 | 0.935 | **33**/1/**5** | see below |
+| Larger input: 768 px | 0.889 | 0.911 | 32/2/6 | worse |
 
 **Stride 16 made things worse**, and the reason is the interesting part: taking features from an
 earlier stage buys spatial resolution but pays for it in *semantic depth* — shallower features, fewer
@@ -237,7 +237,7 @@ Density measured with off-the-shelf yolo11n, sampled every 2 s:
 | Pixabay 188613 — US freeway, 5 lanes | 16.2 | 0.504 | too dense; licence forbids redistribution |
 | Pexels 854671 — daylight, free-flowing | 7.4 | 0.542 | ideal density, but **single direction** |
 | Pexels 4791721 — T-junction | 9.2 | 0.581 | good on paper — see below |
-| **Pexels 4791734 — intersection (chosen)** | 8.8 | 0.593 | ✅ |
+| **Pexels 4791734 — intersection (chosen)** | 8.8 | 0.593 | chosen |
 
 Dusk was *not* the disqualifier we assumed: mean detection confidence at dusk (0.551) is
 statistically indistinguishable from daylight (0.542–0.593). Density was.

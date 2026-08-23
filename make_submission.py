@@ -37,7 +37,8 @@ CODE = [
     ("uv.lock", "exact dependency versions"),
     ("make_submission.py", "this script"),
     ("src", "all source code"),
-    ("tests", "unit tests for the tracker and the target encoding"),
+    ("tests", "unit tests: tracker, counter, grid encoding, manual-count parsing"),
+    ("ali_contribution", "Ali Awada's own implementation of both parts, and his report"),
     ("docs", "task spec, course info, experiments, manual count, unseen-video procedure"),
 ]
 

@@ -24,9 +24,9 @@ RWTH Aachen University).
 - Provide a **gigamove link**: <https://gigamove.rwth-aachen.de/en>
 - Make sure *all* relevant documents are included.
 
-## The Part 2 video — what the course allows
+## The Part 2 video: what is allowed
 
-Clarification from the teaching team, and the reason our two videos are different:
+Posted by the teaching team. It is why our two videos are different:
 
 > You are free to select any video that is recorded with a static camera. For example, the video
 > below can be used, or if you want, you can use other videos you can find publicly available on
@@ -34,15 +34,12 @@ Clarification from the teaching team, and the reason our two videos are differen
 > evaluation.
 > — <https://www.youtube.com/watch?v=wqctLW0Hb_0&list=PLJKyZ_NuOhJQzif2-6-Kq9OiOj_UjJWvi&index=1>
 
-Two things follow. **Any public static-camera clip is allowed**, so `data/traffic.mp4` (Pexels
-4791734, sourced by us) is a legitimate choice and does not have to be the sample. And **one
-minute is explicitly enough**, which is what our 60 s clip and its manual count of 43 rest on — the
-length is the course's number, not a corner we cut.
+So any public static-camera clip counts. `data/traffic.mp4` is Pexels 4791734, which we picked
+ourselves; it did not have to be the sample. And 60 s is enough, which is the length of our clip
+and of the manual count of 43.
 
-Ali used the sample video above instead, taking a 2-minute section of it. So the two
-implementations are evaluated on different footage: ours on a street-level clip, his on the
-course's elevated motorway shot. That is allowed, and it is why the two counts are not directly
-comparable — see `NOTES.md`.
+Ali used the sample video instead, a 2-minute section of it. Ours is street level, his is the
+motorway from a bridge, so the two counts are not comparable. See `NOTES.md`.
 
 ## Supervision
 
@@ -54,10 +51,10 @@ comparable — see `NOTES.md`.
 1. **Documented code**
    - Explain what functions do.
    - **Comment who took part in each code snippet** — who did what.
-   - Our answer: an `Author:` tag at the top of every module, and a per-function tag where someone
-     else in the team wrote part of it. `src/`, `tests/` and `docs/` are Vinh's;
-     `ali_contribution/` is Ali Awada's, written independently and kept as its own folder rather
-     than merged in, so the tags stay true. The README lists this under *Attribution*.
+   - How we do it: an `Author:` tag at the top of every module, and a per-function tag where
+     someone else wrote part of it. `src/`, `tests/` and `docs/` are Vinh's. `ali_contribution/`
+     is Ali's, kept as its own folder rather than merged in so the tags stay true. Listed in the
+     README under Attribution.
 2. **Presentation**
    - Explain **what we tried and what did and did not work**.
    - **Compare methods**, evaluate and explain **which method works best and why**.
