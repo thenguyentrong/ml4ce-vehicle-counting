@@ -17,6 +17,12 @@ submission/
 
 # Model weights and media are too large for git
 *.pt
+# ...except the three the inference entry points load by default, so a clone of this
+# repo can run both parts without retraining. 30 MB total; the ablation checkpoints
+# stay out, and the videos have to (counted.mp4 is 111 MB, over GitHub's 100 MB limit).
+!runs/mobilenet_multi_unfreeze/best.pt
+!runs/yolo/finetune/weights/best.pt
+!yolo11n.pt
 *.pth
 *.onnx
 *.mp4
