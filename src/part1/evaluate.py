@@ -155,13 +155,47 @@ def plot_pr(precisions, recalls, ap, out_path) -> None:
     plt.close(fig)
 
 
+def resolve_run(tag: str | None) -> tuple[Path, dict]:
+    """Return (run_dir, metrics) for `tag`, or for the best-scoring run if `tag` is None.
+
+    "Best" comes from each run's `metrics.json`, so the ranking is measured test F1 and not a
+    hard-coded name that goes stale.
+    """
+    if tag is not None:
+        run_dir = config.RUNS_DIR / tag
+        if not (run_dir / "best.pt").exists():
+            raise SystemExit(f"no checkpoint at {run_dir / 'best.pt'}")
+        metrics_path = run_dir / "metrics.json"
+        metrics = json.loads(metrics_path.read_text()) if metrics_path.exists() else {}
+        return run_dir, metrics
+
+    scored = []
+    for ckpt in sorted(config.RUNS_DIR.glob("*/best.pt")):
+        metrics_path = ckpt.parent / "metrics.json"
+        if not metrics_path.exists():
+            continue
+        metrics = json.loads(metrics_path.read_text())
+        scored.append((metrics.get("test", {}).get("f1", 0.0), ckpt.parent, metrics))
+
+    if not scored:
+        raise SystemExit(
+            f"no evaluated checkpoint found under {config.RUNS_DIR}. Train one with "
+            f"`python -m src.part1.train`, or pass --tag explicitly."
+        )
+
+    f1, run_dir, metrics = max(scored, key=lambda s: s[0])
+    print(f"[part1] no --tag given; using {run_dir.name} (test F1 {f1:.3f})")
+    return run_dir, metrics
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Evaluate the Part 1 detector")
-    p.add_argument("--tag", default="baseline")
+    p.add_argument("--tag", default=None,
+                   help="run under runs/ to evaluate; default: best test F1")
     args = p.parse_args()
 
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    run_dir = config.RUNS_DIR / args.tag
+    run_dir, _ = resolve_run(args.tag)
     ckpt = torch.load(run_dir / "best.pt", map_location=dev, weights_only=False)
 
     saved = ckpt.get("config", {})

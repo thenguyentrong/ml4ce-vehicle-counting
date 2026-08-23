@@ -30,45 +30,12 @@ from PIL import Image
 
 import config
 from src.part1.dataset import IMAGENET_MEAN, IMAGENET_STD
-from src.part1.evaluate import pr_curve, prf_at_threshold
+from src.part1.evaluate import pr_curve, prf_at_threshold, resolve_run
 from src.part1.infer import decode_predictions
 from src.part1.model import VehicleDetector
 from src.part1.visualize import GREEN, RED, draw
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp"}
-
-
-def resolve_run(tag: str | None) -> tuple[Path, dict]:
-    """Return (run_dir, metrics) for `tag`, or for the best-scoring run if `tag` is None.
-
-    "Best" comes from each run's `metrics.json`, so the ranking is measured test F1 and not a
-    hard-coded name that goes stale.
-    """
-    if tag is not None:
-        run_dir = config.RUNS_DIR / tag
-        if not (run_dir / "best.pt").exists():
-            raise SystemExit(f"no checkpoint at {run_dir / 'best.pt'}")
-        metrics_path = run_dir / "metrics.json"
-        metrics = json.loads(metrics_path.read_text()) if metrics_path.exists() else {}
-        return run_dir, metrics
-
-    scored = []
-    for ckpt in sorted(config.RUNS_DIR.glob("*/best.pt")):
-        metrics_path = ckpt.parent / "metrics.json"
-        if not metrics_path.exists():
-            continue
-        metrics = json.loads(metrics_path.read_text())
-        scored.append((metrics.get("test", {}).get("f1", 0.0), ckpt.parent, metrics))
-
-    if not scored:
-        raise SystemExit(
-            f"no evaluated checkpoint found under {config.RUNS_DIR}. Train one with "
-            f"`python -m src.part1.train`, or pass --tag explicitly."
-        )
-
-    f1, run_dir, metrics = max(scored, key=lambda s: s[0])
-    print(f"[predict] no --tag given; using {run_dir.name} (test F1 {f1:.3f})")
-    return run_dir, metrics
 
 
 def load_model(run_dir: Path, dev: torch.device) -> tuple[VehicleDetector, dict]:

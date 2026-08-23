@@ -33,20 +33,45 @@ import config
 MANUAL_DOC = config.PROJECT_ROOT / "docs" / "manual_count.md"
 
 
+def _cell(text: str, label: str) -> int | None:
+    """The integer in the markdown row `| <label> | 31 |`, or None if it is not a number yet.
+
+    The number may keep the backticks or asterisks the template puts around `TODO` - whoever
+    fills the table in should not have to strip formatting for the parser's benefit.
+    """
+    m = re.search(rf"^\|\s*\**{re.escape(label)}\**\s*\|[\s`*]*(\d+)[\s`*]*\|",
+                  text, re.MULTILINE)
+    return int(m.group(1)) if m else None
+
+
 def read_manual_count(path: Path = MANUAL_DOC) -> dict[str, int] | None:
-    """Parse the manual tally out of docs/manual_count.md; None while it is still TODO."""
+    """Parse the manual tally out of docs/manual_count.md; None while it is still TODO.
+
+    Raises if the two directions contradict the total written in the same table. That total is
+    quoted in README.md, in NOTES.md and on the slides, so letting them disagree silently would
+    put one number in the comparison and a different one in every sentence describing it.
+    """
     if not path.exists():
         return None
 
+    text = path.read_text(encoding="utf-8")
     counts: dict[str, int] = {}
     for label in config.DIRECTION_LABELS.values():
-        # Match the markdown table row: | toward camera | 31 |
-        m = re.search(rf"^\|\s*{re.escape(label)}\s*\|\s*(\d+)\s*\|", path.read_text(encoding="utf-8"), re.MULTILINE)
-        if not m:
+        value = _cell(text, label)
+        if value is None:
             return None
-        counts[label] = int(m.group(1))
+        counts[label] = value
 
     counts["total"] = sum(counts.values())
+
+    stated = _cell(text, "total")
+    if stated is not None and stated != counts["total"]:
+        directions = ", ".join(f"{k} {v}" for k, v in counts.items() if k != "total")
+        raise ValueError(
+            f"{path.name}: the directions sum to {counts['total']} ({directions}) but the "
+            f"total row says {stated}. Fix whichever is wrong - that total is quoted in "
+            f"README.md, NOTES.md and the slides."
+        )
     return counts
 
 
@@ -70,11 +95,12 @@ def main() -> None:
     print("=" * 78)
     print("AUTOMATIC COUNTS")
     print("=" * 78)
-    header = f"{'run':26s} {'weights':9s} {'match':10s}" + "".join(f"{l:>18s}" for l in labels) + f"{'total':>7s}"
+    header = (f"{'run':26s} {'weights':9s} {'match':10s}{'video':18s}"
+              + "".join(f"{l:>18s}" for l in labels) + f"{'total':>7s}")
     print(header)
     for r in runs:
         weights = "stock" if r["weights"] == "stock" else "fine-tuned"
-        row = f"{r['tag']:26s} {weights:9s} {r['match']:10s}"
+        row = f"{r['tag']:26s} {weights:9s} {r['match']:10s}{r.get('video') or config.VIDEO_PATH.name:18s}"
         row += "".join(f"{r['counts'][l]:>18d}" for l in labels)
         row += f"{r['counts']['total']:>7d}"
         print(row)
@@ -83,6 +109,16 @@ def main() -> None:
     print("=" * 78)
     print("VS MANUAL GROUND TRUTH")
     print("=" * 78)
+    # The manual count describes ONE clip. Runs on any other video answer a different
+    # question and must not be differenced against it - that produced a nonsense "+132"
+    # row the first time a run on the course sample video landed in runs/part2/.
+    truth_video = config.VIDEO_PATH.name
+    # A run made before --video existed stores None, meaning it used the project clip.
+    same = lambda r: (r.get("video") or truth_video) == truth_video
+    runs, other = [r for r in runs if same(r)], [r for r in runs if not same(r)]
+    if other:
+        names = ", ".join(sorted({r.get("video", "?") for r in other}))
+        print(f"({len(other)} run(s) on other footage not compared here: {names})")
     if manual is None:
         print("Manual count not recorded yet.")
         print(f"  1. python -m src.part2.manual_count   -> runs/part2/manual/reference.mp4")

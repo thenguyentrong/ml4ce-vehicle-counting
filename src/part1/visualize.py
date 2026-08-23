@@ -23,7 +23,7 @@ from PIL import Image, ImageDraw
 import config
 from src import data as data_mod
 from src.part1.dataset import IMAGENET_MEAN, IMAGENET_STD, build_loaders
-from src.part1.evaluate import match
+from src.part1.evaluate import match, resolve_run
 from src.part1.infer import decode_predictions
 from src.part1.model import VehicleDetector
 
@@ -48,12 +48,13 @@ def draw(im: Image.Image, boxes, color, labels=None, width=3) -> Image.Image:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Visualize predictions against ground truth")
-    p.add_argument("--tag", default="temporal")
+    p.add_argument("--tag", default=None,
+                   help="run under runs/ to draw; default: best test F1")
     p.add_argument("--n", type=int, default=6, help="how many test images to show")
     args = p.parse_args()
 
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    run_dir = config.RUNS_DIR / args.tag
+    run_dir, _ = resolve_run(args.tag)
     ckpt = torch.load(run_dir / "best.pt", map_location=dev, weights_only=False)
     saved = ckpt.get("config", {})
 
