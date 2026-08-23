@@ -23,7 +23,7 @@ from pathlib import Path
 
 import config
 
-BUNDLE_NAME = "ML4CE_Topic2_Nguyen_Rexhep"
+BUNDLE_NAME = "ML4CE_Topic2_Nguyen_Azemi_Awada"
 
 # Compressing an mp4 or a checkpoint gains ~nothing and costs minutes, so those are stored.
 STORE_SUFFIXES = {".mp4", ".pt", ".jpg", ".jpeg", ".png"}

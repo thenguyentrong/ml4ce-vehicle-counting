@@ -384,3 +384,52 @@ why they are written in seconds. The 60 s clip still gives 32/15/47 with 408 tra
 
 Also: the README listed three notebooks in `notebooks/` that do not exist. `yolo26n.pt` in the
 root is a stray download, nothing uses it, it is not in the bundle.
+
+## 2026-08-21 — Ali's implementation lands, and the two of them disagree
+
+Ali pushed his own version of both parts on 16.08, in `ali_contribution/`. It is not a fork of
+`src/` — he wrote his own data loader, grid encoding, head, training loop, YOLO fine-tune, tracker
+and counter, on his own video, with his own manual count. So we now have two independent answers to
+the same task sheet, and they do not agree:
+
+| | `src/` (Vinh) | `ali_contribution/` (Ali) |
+|---|---|---|
+| Part 1 backbone | MobileNetV3, multi-cell assign, unfrozen | MobileNetV3-Small, frozen |
+| Part 1 test F1 | 0.904 | 0.72 |
+| Part 1 test images | 50 (temporal, last in time) | 18 (random) |
+| Part 2 video | 60 s street-level clip, 43 by hand | motorway from a bridge, 333 by hand |
+| Part 2 count | 47 (+9.3%) | 46 (−86%) |
+
+Keeping both. The rubric asks us to compare methods and say which works better and why, and this is
+a better comparison than any ablation we could have run on purpose, because nothing was shared
+between the two beyond the task sheet.
+
+**Where the gap comes from, as far as we can tell.** Three differences, in the order they matter:
+
+**1. He splits at random, we split by time.** His `make_splits` shuffles the filenames. This is the
+same trap that cost us two days in July: the Kaggle set is one video sampled every 20 frames, so a
+random split puts near-identical frames on both sides and the score comes out too high. His 0.72 is
+therefore an optimistic number measured on 18 images, and ours is a pessimistic one measured on 50.
+The real gap is wider than the table shows, not narrower.
+
+**2. He only ever sees the labelled images.** Both his splits enumerate `df["image"].unique()`,
+which is the 355 images that have a box in the CSV. `training_images/` holds 1001. The other 646 are
+the empty-road frames we checked by hand in July — real negatives, not missing labels. His detector
+never sees a frame without a car in it, in Part 1 or in the YOLO fine-tune.
+
+**3. Nobody ran the control on his video.** His report blames the 46-against-333 on the domain gap
+between dashcam stills and an overhead bridge shot, and stops there. But we found the opposite
+effect on our clip: fine-tuning on those same dashcam stills *helped*, 47 against 29 for stock
+COCO. The obvious reading of his number is that fine-tuning a COCO model on 355 close-up frames is
+what destroyed it on small distant cars — it narrowed a general detector into a bad one. That is one
+run to settle: `--weights stock` on his clip. If stock beats 46 by a wide margin, the cause is the
+fine-tune and not the camera. Worth doing before the presentation, since it flips the conclusion in
+his report.
+
+To be fair to the work: the class-imbalance section of his report is the best-documented piece of
+tuning either of us wrote up. Precision and recall both exactly 0.000 at threshold 0.5, then he
+looked at the raw outputs instead of lowering the threshold and calling it done, found the highest
+objectness on a test image was 0.21, worked out that 255 of 256 cells are negative so the loss is
+minimised by predicting nothing, and fixed it at the source with `pos_weight=20` — recall 0.63 to
+0.87. He also spotted on his own that the CSV annotations are not exhaustive, which took us an
+afternoon of staring at false positives.

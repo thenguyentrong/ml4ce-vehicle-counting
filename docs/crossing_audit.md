@@ -63,4 +63,9 @@ catch false positives, never vehicles the system MISSED, and misses are the larg
 | system claims | 32 | 15 | 47 |
 | of those, real | | | |
 | vehicles system MISSED | | | |
-| **manual truth** | | | |
+| **manual truth** | **23** | **20** | **43** |
+| **error** | **+9** | **−5** | **+4** |
+
+The manual truth row is recorded (`docs/manual_count.md`, second pass 23.08). The two blank rows
+still need this checklist worked through: they decompose the +9 into double counts versus phantom
+tracks, and the −5 into vehicles the detector never saw versus tracks that died before the line.

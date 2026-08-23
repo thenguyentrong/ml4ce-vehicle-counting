@@ -2,7 +2,7 @@
 
 Machine Learning for Civil Engineering, RWTH Aachen University — summer semester 2026.
 
-**Team:** The Vinh Nguyen Trong, Azemi Rexhep
+**Team:** The Vinh Nguyen Trong, Rexhep Azemi, Ali Awada
 
 - **Part 1 — detector from scratch.** ImageNet-pretrained CNN backbone plus a small single-class
   head. For each cell of a 16×16 grid it predicts one objectness score and four box values. The
@@ -87,6 +87,7 @@ src/part1/           dataset.py  model.py  losses.py  train.py  infer.py  evalua
 src/part2/           video.py  yolo_data.py  finetune.py  tracker.py  counter.py
                      run_count.py  suggest_line.py  manual_count.py  evaluate.py
 tests/               tracker + counter unit tests (synthetic detections)
+ali_contribution/    Ali's own implementation of both parts, kept separate (see Attribution)
 docs/                task_spec.md  course_info.md  experiments.md
                      manual_count.md  crossing_audit.md  unseen_video.md
 NOTES.md             lab notebook: what we tried, what worked, what did not
@@ -142,9 +143,19 @@ hand-built head gets 0.904.
 | off-the-shelf COCO | Hungarian | 18 | 11 | **29** | 610 |
 | off-the-shelf COCO | greedy | 18 | 11 | **29** | 621 |
 
-⚠️ **The manual count is only a total (43), no per-direction split yet**, so no accuracy is
-claimed above — the runs are only compared against each other. `src.part2.evaluate` refuses to
-use a run as truth. See [`docs/manual_count.md`](docs/manual_count.md).
+**Against the manual count** — 23 toward, 20 away, 43 total, tallied by hand twice and reaching
+the same total both times ([`docs/manual_count.md`](docs/manual_count.md)):
+
+| run | toward | away | total | error |
+|---|---|---|---|---|
+| fine-tuned, either matcher | **+9** | **−5** | 47 | **+4  (9.3%)** |
+| off-the-shelf COCO | −5 | −9 | 29 | −14  (−33%) |
+
+The net +4 is two much larger errors cancelling out: **nine phantom crossings toward the camera
+against five real vehicles missed going away** — fourteen wrong, not four. Fragmentation creates
+the phantoms (8.7 tracks per counted vehicle) and occlusion at the line hides the misses. This is
+the failure mode `NOTES.md` predicted before the split was recorded, and it is why the total on its
+own is the wrong number to quote.
 
 Two results came out opposite to the expectation, both explained in [`NOTES.md`](NOTES.md):
 
@@ -166,7 +177,7 @@ showed its best line was crossed by 15 of 34 moving tracks, 14 of them the same 
 
 ```bash
 uv run python make_submission.py --list      # what goes in, and what is missing
-uv run python make_submission.py             # -> submission/ML4CE_Topic2_Nguyen_Rexhep.zip
+uv run python make_submission.py             # -> submission/ML4CE_Topic2_Nguyen_Azemi_Awada.zip
 ```
 
 The zip has the code, both sets of weights, the rendered output video, the docs, the metrics of
@@ -178,5 +189,23 @@ Upload to [gigamove](https://gigamove.rwth-aachen.de/en), mail the link to
 
 ## Attribution
 
-The course wants each code snippet to say who worked on it. Every module has an `Author:` tag,
-and functions written by someone else in the team are tagged on their own.
+The course wants each code snippet to say who worked on it. Every module has an `Author:` tag, and
+functions written by someone else in the team are tagged on their own.
+
+**The Vinh Nguyen Trong** — `config.py`, `src/` (both parts), `tests/`, `docs/`, the slides in
+`presentation/`, and the manual count of `data/traffic.mp4`.
+
+**Ali Awada** — everything under `ali_contribution/`: a second implementation of both parts written
+independently of `src/`, with its own data loader, grid-target encoding, MobileNetV3-Small head,
+training loop, YOLOv8-nano fine-tune, IoU tracker and line counter. His write-up is
+`ali_contribution/Project_Report.docx`, and the manual count in it (333 vehicles on a motorway clip
+filmed from a bridge) is his own.
+
+**Rexhep Azemi** — team member. No file in this repository carries his `Author:` tag; the code
+is Vinh's and Ali's, and the tags are the record.
+
+The two implementations are kept apart on purpose instead of being merged into one. They were
+written separately, they disagree, and the disagreement is the interesting part: `src/` overcounts
+by 9.3% (47 against 43 by hand) while `ali_contribution/` undercounts by roughly 6x (46 against
+333). Same task, same Kaggle data, different video and different choices — the comparison is in
+[`NOTES.md`](NOTES.md). Merging them would have hidden that.

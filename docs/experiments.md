@@ -285,9 +285,21 @@ through the count they produce (next section).
 | off-the-shelf | Hungarian | 18 | 11 | **29** | 610 | 21.0 | 10.16 |
 | off-the-shelf | greedy | 18 | 11 | **29** | 621 | 21.4 | 10.16 |
 
-**Manual ground truth:** _pending — see `docs/manual_count.md`._ Until it is recorded, the table
-above compares the variants against each other but not against truth, and no accuracy claim is
-made.
+**Manual ground truth: 23 toward, 20 away, 43 total.** Counted by hand on 20.07 (total) and again
+on 23.08 (per direction), independently reaching 43 both times.
+
+| run | toward | away | total | error |
+|---|---|---|---|---|
+| fine-tuned, Hungarian | +9 | −5 | 47 | **+4** |
+| fine-tuned, greedy | +9 | −5 | 47 | **+4** |
+| off-the-shelf, Hungarian | −5 | −9 | 29 | −14 |
+| off-the-shelf, greedy | −5 | −9 | 29 | −14 |
+
+**The net error hides the gross error.** +4 overall is +9 in one direction and −5 in the other:
+nine crossings counted that no vehicle made, five vehicles that crossed and were never counted.
+Quoting 9.3% alone would overstate how well this works — 14 of 43 vehicles are handled wrongly,
+and the two mistakes happen to be of opposite sign. The per-direction split is the only thing that
+exposes this, which is why the task sheet asks for it.
 
 **Fine-tuning helped, contrary to our prediction.** We expected it to *hurt*: the Part 1 data is
 dashcam footage (rear views, road level) and the video is a static street camera (head-on, elevated),
