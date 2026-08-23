@@ -433,3 +433,36 @@ objectness on a test image was 0.21, worked out that 255 of 256 cells are negati
 minimised by predicting nothing, and fixed it at the source with `pos_weight=20` — recall 0.63 to
 0.87. He also spotted on his own that the CSV annotations are not exhaustive, which took us an
 afternoon of staring at false positives.
+
+## 2026-08-23 — The control run: it was the fine-tune, not the camera
+
+Ali's report explains his 46-against-333 as a domain gap — the detector was tuned on close dashcam
+frames and his video is a motorway from a bridge, so the camera angle gets the blame. We had left
+that as "one run to settle" above. Settled: 60 s of the same course sample video, our tracker, our
+line (suggest_line put it at y=0.6, alignment 0.91 — on this geometry the flow crosses the line
+head-on, unlike our clip), only the weights swapped.
+
+| weights | counted | toward / away | tracks | tracks per counted |
+|---|---|---|---|---|
+| fine-tuned | 17 | 13 / 4 | 146 | 8.6 |
+| stock COCO | 175 | 82 / 93 | 506 | 2.9 |
+
+Ten to one, and stock is at the rate a person counts on this footage (Ali's 333 over two minutes is
+~167 a minute). So the camera angle is not what broke his pipeline — the fine-tune is. Ours breaks
+identically on this video, and his and ours share nothing but the idea of fine-tuning on the Kaggle
+set. Swapping the detector fixes it; nothing else changed.
+
+Why: scale. The Kaggle boxes are median 1.6% of the frame; the vehicles stock finds on the motorway
+are median 0.22% — seven times smaller. Forty epochs with nothing frozen (`freeze: null` in
+args.yaml) pulled the COCO features toward large close-up vehicles until small distant ones stopped
+registering at all. It is not calibration: at conf 0.001 stock emits 171 boxes a frame here, the
+fine-tuned model 7. The response is gone.
+
+Put next to Part 2's own result, the two clips are the whole story: the same fine-tune that wins on
+our street-level video (47 against 29, manual 43) loses 17 to 175 on the motorway. Specialising a
+small detector on 355 close-ups buys accuracy on footage that looks like the training set and pays
+for it everywhere else. That is a better answer to "which method works best and why" than either
+number alone. Runs kept in `runs/part2/course_finetuned` and `course_stock`; the clip is a 60 s cut
+of the sample video the course linked, not our evaluation video — the manual count and everything
+above it still refer to `data/traffic.mp4` only.
+

@@ -301,6 +301,15 @@ Quoting 9.3% alone would overstate how well this works — 14 of 43 vehicles are
 and the two mistakes happen to be of opposite sign. The per-direction split is the only thing that
 exposes this, which is why the task sheet asks for it.
 
+### The same pipeline on the course's sample video
+
+Control run on 60 s of the motorway video the course linked (elevated bridge camera, small distant
+vehicles), same tracker and line, only the weights swapped: fine-tuned counts **17**, stock COCO
+counts **175** — and a person counts about 167 a minute on this footage. The fine-tune that wins on
+our street-level clip is what breaks on the motorway; cause and evidence in NOTES.md (2026-08-23)
+and `docs/unseen_video.md`. Runs: `runs/part2/course_finetuned`, `runs/part2/course_stock`.
+
+
 **Fine-tuning helped, contrary to our prediction.** We expected it to *hurt*: the Part 1 data is
 dashcam footage (rear views, road level) and the video is a static street camera (head-on, elevated),
 so fine-tuning on 355 dashcam frames looked like specialising away from the target domain. Instead

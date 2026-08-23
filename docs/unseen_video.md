@@ -32,7 +32,7 @@ the settings that made it.
 | `TRACK_IOU_THRESH` | yes | Dimensionless overlap, independent of resolution and scale. |
 | `COUNT_LINE` coordinates | yes | Stored normalised to [0, 1], so 1080p and 4K encodes behave the same. |
 | `YOLO_CONF` | mostly | May need raising on cluttered footage; it is a flag (`--conf`). |
-| Fine-tuned weights | **uncertain** | See below. |
+| Fine-tuned weights | **no, on distant footage** | Measured, see below. |
 
 ## The one thing to watch: which weights
 
@@ -40,13 +40,28 @@ The fine-tuned model clearly won on this video — 47 counted against a manual t
 off-the-shelf counted 29. But it was fine-tuned on **355 vehicle frames from a single dashcam
 video**, which is a narrow slice of the world, while off-the-shelf yolo11n saw all of COCO.
 
-So the measurement says "use fine-tuned" and the prior says "fine-tuned is the more likely of the
-two to fall over on really different footage". n = 1 video cannot settle that, so it stays open
-instead of picking one and implying it generalises.
+So the measurement said "use fine-tuned" and the prior said "fine-tuned is the more likely of the
+two to fall over on really different footage". We then ran that experiment: 60 s of the course's
+own sample video (a motorway filmed from a bridge — small, distant vehicles), same tracker, same
+line, only the weights swapped. The prior was right, and it is not close:
 
-**Both ship, and they are one flag apart** (`--weights stock`). On new footage run both: if they
-disagree a lot, the fine-tune did not transfer, and `suggest_line`'s track counts show it (a
-detector that did not transfer makes many short, fragmenting tracks).
+| weights | counted in 60 s | toward / away | tracks created |
+|---|---|---|---|
+| fine-tuned | 17 | 13 / 4 | 146 |
+| stock COCO | **175** | 82 / 93 | 506 |
+
+The rate a person counts on this footage is about 167 a minute, so stock is in range and the
+fine-tuned model misses roughly ninety percent. The cause is scale: the Kaggle training boxes have
+a median area of 1.6% of the frame, the motorway vehicles 0.22% — seven times smaller — and 40
+epochs with nothing frozen taught the model that small things are not vehicles. Dropping the
+confidence threshold does not bring them back (7 boxes a frame at conf 0.001, against stock's
+171), so the features are gone, not under-confident. Full numbers in `runs/part2/course_finetuned`
+and `course_stock`, and in NOTES.md.
+
+**Both ship, and they are one flag apart** (`--weights stock`). The rule that follows: on footage
+that looks like the training close-ups, fine-tuned wins (47 against 29 here, manual 43); on
+elevated or distant cameras, use stock. If the two disagree a lot on a new video, that disagreement
+itself is the diagnosis.
 
 ## Limitations that follow the pipeline anywhere
 

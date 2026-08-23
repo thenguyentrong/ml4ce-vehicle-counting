@@ -72,8 +72,11 @@ uv run python -m src.part2.run_count --video new.mp4 --line 0.45,0.25,0.45,1
 passed. On the project's own test split it gives the same numbers as `evaluate.py`.
 
 `run_count` and `suggest_line` use the fine-tuned weights when they are there, and read the
-**whole** video — only the project clip is trimmed, to the 60 s the manual count covers. What
-transfers to a new video and what does not: [`docs/unseen_video.md`](docs/unseen_video.md).
+**whole** video — only the project clip is trimmed, to the 60 s the manual count covers. One
+caveat, measured on the course's sample video: the fine-tune does not survive distant, elevated
+footage — 17 counted where stock counts 175 in the same 60 s — so on cameras high above the road
+pass `--weights stock`. What transfers to a new video and what does not, and that measurement:
+[`docs/unseen_video.md`](docs/unseen_video.md).
 
 ## Layout
 
