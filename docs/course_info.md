@@ -7,7 +7,7 @@ RWTH Aachen University).
 
 - Group project: **3 CP = 60% of the final grade**.
 - Final exam: 2 CP, mostly high-level understanding of ML concepts.
-- Teams of up to **3 students**. Our team: **The Vinh Nguyen Trong, Rexhep Azemi, Ali Awada**
+- Teams of up to **3 students**. Our team: **The Vinh Nguyen Trong, Ali Awada, Rexhep Azemi**
   (Topic 2).
 
 ## Deadlines

@@ -2,7 +2,7 @@
 
 Machine Learning for Civil Engineering, RWTH Aachen University — summer semester 2026.
 
-**Team:** The Vinh Nguyen Trong, Rexhep Azemi, Ali Awada
+**Team:** The Vinh Nguyen Trong, Ali Awada, Rexhep Azemi
 
 - **Part 1 — detector from scratch.** ImageNet-pretrained CNN backbone plus a small single-class
   head. For each cell of a 16×16 grid it predicts one objectness score and four box values. The
@@ -177,7 +177,7 @@ showed its best line was crossed by 15 of 34 moving tracks, 14 of them the same 
 
 ```bash
 uv run python make_submission.py --list      # what goes in, and what is missing
-uv run python make_submission.py             # -> submission/ML4CE_Topic2_Nguyen_Azemi_Awada.zip
+uv run python make_submission.py             # -> submission/ML4CE_Topic2_Nguyen_Awada_Azemi.zip
 ```
 
 The zip has the code, both sets of weights, the rendered output video, the docs, the metrics of
