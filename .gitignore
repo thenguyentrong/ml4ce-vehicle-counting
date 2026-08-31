@@ -19,7 +19,8 @@ submission/
 *.pt
 # ...except the three the inference entry points load by default, so a clone of this
 # repo can run both parts without retraining. 30 MB total; the ablation checkpoints
-# stay out, and the videos have to (counted.mp4 is 111 MB, over GitHub's 100 MB limit).
+# stay out, and so do the videos - except the counted output video, which is force-added and
+# stored with Git LFS (see .gitattributes): 111 MB is over GitHub's 100 MB plain-file limit.
 !runs/mobilenet_multi_unfreeze/best.pt
 !runs/yolo/finetune/weights/best.pt
 !yolo11n.pt
@@ -34,5 +35,4 @@ Thumbs.db
 desktop.ini
 .DS_Store
 
-# Slides: they ship in the submission zip, not in the repo
-presentation/
+# Slides: tracked in presentation/ (PDF + PPTX + build script); they also ship in the submission zip.

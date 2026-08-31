@@ -83,6 +83,7 @@ pass `--weights stock`. What transfers to a new video and what does not, and tha
 ```
 config.py            all paths + hyperparameters
 make_submission.py   packs code + weights + docs + output video for gigamove
+presentation/        the slides (PDF + PPTX) and the script that builds them
 src/data.py          dataset download, CSV parsing, train/val/test split
 src/eda.py           dataset montages (labeled / unlabeled frames)
 src/part1/           dataset.py  model.py  losses.py  train.py  infer.py  evaluate.py
@@ -186,6 +187,12 @@ uv run python make_submission.py             # -> submission/ML4CE_Topic2_Nguyen
 The zip has the code, both sets of weights, the rendered output video, the docs, the metrics of
 every run and the source clip. The Kaggle images are left out, `python -m src.data` gets them
 back. Slides are taken from `presentation/`, and the script complains when that folder is empty.
+
+Both deliverables are also in this repository: the slides in `presentation/`, and the counted
+output video at `runs/part2/finetune_hungarian/counted.mp4`, stored with **Git LFS** because
+111 MB is over GitHub's plain-file limit. Run `git lfs pull` after cloning, or download the file
+from its page on GitHub. GitHub's *Download ZIP* button does **not** include LFS content - it
+puts a 130-byte pointer file in place of the video.
 
 Upload to [gigamove](https://gigamove.rwth-aachen.de/en), mail the link to
 `ml4cegia@lists.rwth-aachen.de` by **24.08.2026, 23:59**.
