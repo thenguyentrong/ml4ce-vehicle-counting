@@ -182,10 +182,12 @@ def fig_pr():
     best, base = data["mobilenet_multi_unfreeze"], data["temporal"]
     ax.plot(base["r"], base["p"], color=MUT, lw=1.6, ls="--", zorder=3)
     ax.plot(best["r"], best["p"], color=INK, lw=2.2, zorder=4)
-    ax.text(0.55, 0.30, f"task-sheet baseline\nAP50 {base['ap']:.3f}",
+    # Labels sit in empty regions: "best" above the solid curve's plateau, the baseline label
+    # above the dashed curve, and the arrow starts lower-right so it crosses neither.
+    ax.text(0.05, 0.53, f"task-sheet baseline\nAP50 {base['ap']:.3f}",
             fontsize=10, color=MUT)
-    ax.text(0.06, 0.62, f"best\nAP50 {best['ap']:.3f}", fontsize=11, color=INK)
-    ax.annotate("13% never found\nat any threshold", xy=(0.885, 0.45), xytext=(0.30, 0.09),
+    ax.text(0.05, 0.80, f"best\nAP50 {best['ap']:.3f}", fontsize=11, color=INK)
+    ax.annotate("13% never found\nat any threshold", xy=(0.885, 0.45), xytext=(0.52, 0.12),
                 fontsize=9.5, color=SLATE,
                 arrowprops=dict(arrowstyle="-|>", color=SLATE, lw=1.0))
     ax.set_xlim(0, 1.02)
@@ -231,10 +233,14 @@ def fig_curves():
     ax.plot(ep, tr, color=MUT, lw=1.6, ls="--", zorder=3)
     ax.plot(ep, va, color=INK, lw=2.0, zorder=4)
     ax.scatter([ep[best]], [va[best]], s=42, facecolor=PAPER, edgecolor=INK, zorder=5, linewidth=1.6)
-    ax.text(ep[best] + 1.2, va[best] + 0.012, f"val minimum · epoch {ep[best]}",
-            fontsize=10, color=INK)
-    ax.text(ep[-1], tr[-1] - 0.015, "train", ha="right", va="top", fontsize=10, color=MUT)
-    ax.text(ep[-1], va[-1] + 0.010, "validation", ha="right", va="bottom", fontsize=10, color=INK)
+    # The epoch label goes up and to the left of the marker on a thin leader, so it cannot
+    # collide with the curve labels at the right edge; "train" sits between the two curves.
+    ax.annotate(f"val minimum · epoch {ep[best]}", xy=(ep[best], va[best]),
+                xytext=(ep[best] - 2.0, va[best] + 0.11), ha="right", va="bottom",
+                fontsize=10, color=INK,
+                arrowprops=dict(arrowstyle="-", color=INK, lw=0.8, shrinkA=0, shrinkB=4))
+    ax.text(ep[-1], tr[-1] + 0.030, "train", ha="right", va="bottom", fontsize=10, color=MUT)
+    ax.text(ep[-1], va[-1] + 0.030, "validation", ha="right", va="bottom", fontsize=10, color=INK)
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Total loss")
     bare(ax, "y")
