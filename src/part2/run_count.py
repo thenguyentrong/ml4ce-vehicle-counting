@@ -36,7 +36,7 @@ from src.part2.tracker import IoUTracker, Track
 # Drawn in BGR, because that is the byte order OpenCV uses.
 COLOR_LINE = (0, 0, 255)
 COLOR_BOX = (0, 200, 0)
-COLOR_COUNTED = (255, 160, 0)
+COLOR_COUNTED = (0, 160, 255)  # orange; (255, 160, 0) was RGB and rendered blue
 COLOR_TEXT = (255, 255, 255)
 
 
