@@ -35,4 +35,4 @@ Thumbs.db
 desktop.ini
 .DS_Store
 
-# Slides: tracked in presentation/ (PDF + PPTX + build script); they also ship in the submission zip.
+# Slides: tracked in presentation/ (PDF + PPTX); they also ship in the submission zip.

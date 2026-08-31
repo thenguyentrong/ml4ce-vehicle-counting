@@ -83,7 +83,7 @@ pass `--weights stock`. What transfers to a new video and what does not, and tha
 ```
 config.py            all paths + hyperparameters
 make_submission.py   packs code + weights + docs + output video for gigamove
-presentation/        the slides (PDF + PPTX) and the script that builds them
+presentation/        the slides (PDF + PPTX)
 src/data.py          dataset download, CSV parsing, train/val/test split
 src/eda.py           dataset montages (labeled / unlabeled frames)
 src/part1/           dataset.py  model.py  losses.py  train.py  infer.py  evaluate.py
